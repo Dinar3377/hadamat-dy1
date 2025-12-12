@@ -1,53 +1,40 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <title>Taxi Map</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8">
+<title>Hadamat Taxi</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- Telegram -->
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      font-family: Arial, sans-serif;
-    }
-
-    #map {
-      height: calc(100% - 140px);
-      width: 100%;
-    }
-
-    #panel {
-      height: 140px;
-      padding: 10px;
-      background: #fff;
-      box-shadow: 0 -2px 10px rgba(0,0,0,.3);
-    }
-
-    .row {
-      font-size: 15px;
-      margin-bottom: 4px;
-    }
-
-    button {
-      width: 100%;
-      padding: 14px;
-      font-size: 18px;
-      background: #00c853;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      margin-top: 6px;
-    }
-
-    button:disabled {
-      background: #aaa;
-    }
-  </style>
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: Arial, sans-serif;
+}
+#map {
+  height: calc(100% - 120px);
+}
+#panel {
+  height: 120px;
+  padding: 10px;
+  background: #fff;
+}
+button {
+  width: 100%;
+  padding: 14px;
+  font-size: 18px;
+  background: #00c853;
+  color: white;
+  border: none;
+  border-radius: 8px;
+}
+button:disabled {
+  background: #aaa;
+}
+</style>
 </head>
 
 <body>
@@ -55,67 +42,50 @@
 <div id="map"></div>
 
 <div id="panel">
-  <div class="row" id="a">📍 Точка A: не выбрана</div>
-  <div class="row" id="b">🏁 Точка B: не выбрана</div>
-  <div class="row" id="d">📏 Расстояние: —</div>
+  <div id="info">📍 Выберите точки A и B</div>
   <button id="send" disabled>🚕 Отправить заказ</button>
 </div>
 
 <script>
+  // 🔥 ПРОВЕРКА: ТОЛЬКО TELEGRAM WEBAPP
+  if (!window.Telegram || !Telegram.WebApp || !Telegram.WebApp.initData) {
+    document.body.innerHTML = "<h2>❌ Открыто НЕ из Telegram</h2>";
+    throw new Error("Not Telegram WebApp");
+  }
+
   const tg = Telegram.WebApp;
   tg.ready();
   tg.expand();
 
-  let map;
-  let markerA = null;
-  let markerB = null;
-  let A = null;
-  let B = null;
-  let distanceKm = null;
+  let map, A = null, B = null, distanceKm = null;
 
   function initMap() {
     map = new google.maps.Map(document.getElementById("map"), {
-      zoom: 13,
       center: { lat: 55.4842, lng: 54.8526 }, // Дюртюли
+      zoom: 13
     });
 
-    const directionsService = new google.maps.DirectionsService();
-    const directionsRenderer = new google.maps.DirectionsRenderer({
-      suppressMarkers: true
-    });
-    directionsRenderer.setMap(map);
+    const dirService = new google.maps.DirectionsService();
+    const dirRenderer = new google.maps.DirectionsRenderer({ suppressMarkers: true });
+    dirRenderer.setMap(map);
 
     map.addListener("click", (e) => {
       if (!A) {
         A = e.latLng;
-        markerA = new google.maps.Marker({
-          position: A,
-          map,
-          label: "A"
-        });
-        document.getElementById("a").innerText =
-          `📍 Точка A: ${A.lat().toFixed(5)}, ${A.lng().toFixed(5)}`;
-      }
-      else if (!B) {
+        new google.maps.Marker({ position: A, map, label: "A" });
+      } else if (!B) {
         B = e.latLng;
-        markerB = new google.maps.Marker({
-          position: B,
-          map,
-          label: "B"
-        });
-        document.getElementById("b").innerText =
-          `🏁 Точка B: ${B.lat().toFixed(5)}, ${B.lng().toFixed(5)}`;
+        new google.maps.Marker({ position: B, map, label: "B" });
 
-        directionsService.route({
+        dirService.route({
           origin: A,
           destination: B,
           travelMode: google.maps.TravelMode.DRIVING
         }, (res, status) => {
           if (status === "OK") {
-            directionsRenderer.setDirections(res);
-            const meters = res.routes[0].legs[0].distance.value;
-            distanceKm = (meters / 1000).toFixed(2);
-            document.getElementById("d").innerText =
+            dirRenderer.setDirections(res);
+            distanceKm = (res.routes[0].legs[0].distance.value / 1000).toFixed(2);
+            document.getElementById("info").innerText =
               `📏 Расстояние: ${distanceKm} км`;
             document.getElementById("send").disabled = false;
           }
@@ -124,16 +94,14 @@
     });
 
     document.getElementById("send").onclick = () => {
-      if (!A || !B) return;
-
-      const data = {
+      const payload = {
         from: { lat: A.lat(), lng: A.lng() },
         to: { lat: B.lat(), lng: B.lng() },
         distance_km: distanceKm
       };
 
-      tg.sendData(JSON.stringify(data));
-      setTimeout(() => tg.close(), 300); 
+      tg.sendData(JSON.stringify(payload));
+      setTimeout(() => tg.close(), 300);
     };
   }
 </script>
@@ -144,3 +112,4 @@
 
 </body>
 </html>
+
