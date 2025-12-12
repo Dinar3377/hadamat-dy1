@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <title>Заказ такси</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8">
+  <title>Hadamat Taxi Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
@@ -14,157 +14,115 @@
   <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
 
   <style>
-    html, body { margin:0; padding:0; height:100%; }
-    #map { height: 100%; }
-    #log {
-      position: fixed;
-      left: 10px;
-      right: 10px;
-      top: 10px;
-      z-index: 9999;
-      background: rgba(0,0,0,0.70);
-      color: #fff;
-      padding: 10px 12px;
-      border-radius: 12px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 12px;
-      max-height: 35vh;
-      overflow: auto;
-      pointer-events: none;
-      white-space: pre-wrap;
+    html, body { height:100%; margin:0; font-family:sans-serif; }
+    #map { height:100%; }
+
+    #panel {
+      position:absolute;
+      bottom:10px;
+      left:10px;
+      right:10px;
+      background:#fff;
+      padding:12px;
+      border-radius:10px;
+      box-shadow:0 0 10px rgba(0,0,0,.3);
+    }
+
+    #send {
+      width:100%;
+      padding:12px;
+      font-size:18px;
+      margin-top:10px;
+      background:#2b8eff;
+      color:#fff;
+      border:none;
+      border-radius:8px;
+    }
+
+    #send:disabled {
+      opacity:.6;
     }
   </style>
 </head>
+
 <body>
 
 <div id="map"></div>
-<div id="log">log...\n</div>
+
+<div id="panel">
+  <div id="a">🚕 Точка A: не выбрана</div>
+  <div id="b">📍 Точка B: не выбрана</div>
+  <div id="d">📏 Расстояние: —</div>
+  <button id="send" disabled>Отправить заявку 🚀</button>
+</div>
 
 <script>
-  const tg = window.Telegram?.WebApp;
+  // ===============================
+  // TELEGRAM INIT (КРИТИЧНО)
+  // ===============================
+  const tg = Telegram.WebApp;
+  tg.ready();
+  tg.expand();
 
-  const logBox = document.getElementById("log");
-  function log(msg) {
-    logBox.textContent += msg + "\n";
-    logBox.scrollTop = logBox.scrollHeight;
-  }
+  // ===============================
+  // MAP
+  // ===============================
+  const map = L.map("map").setView([12.7794, 45.0360], 13);
 
-  if (!tg) {
-    alert("❌ Telegram WebApp API не найден");
-    log("❌ tg not found");
-  } else {
-    tg.ready?.();
-    tg.expand?.();
-
-    log("✅ tg found");
-    log("initData length: " + (tg.initData ? tg.initData.length : 0));
-    log("platform: " + (tg.platform || "unknown"));
-    log("version: " + (tg.version || "unknown"));
-  }
-
-  // --- MainButton: показываем всегда, чтобы точно можно было нажать ---
-  tg.MainButton.setText("🚕 Нажми сюда (тест)");
-  tg.MainButton.show();
-  tg.MainButton.enable();  // ⚠️ ВАЖНО: не disabled
-
-  // --- Состояние заказа ---
-  const CENTER = [55.4842, 54.8526];
-  const map = L.map('map').setView(CENTER, 13);
-
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap'
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution:"© OpenStreetMap"
   }).addTo(map);
 
-  let pointA = null, pointB = null;
-  let markerA = null, markerB = null;
-  let routeControl = null;
-  let distanceKm = "";
+  let A=null, B=null, mA=null, mB=null, route=null, km=null;
 
-  map.on('click', (e) => {
-    if (!pointA) {
-      pointA = e.latlng;
-      markerA = L.marker(pointA).addTo(map).bindPopup("📍 Точка A").openPopup();
-      tg.MainButton.setText("Выбери точку B");
-      log("A set: " + pointA.lat + "," + pointA.lng);
-    } else if (!pointB) {
-      pointB = e.latlng;
-      markerB = L.marker(pointB).addTo(map).bindPopup("🏁 Точка B").openPopup();
-      tg.MainButton.setText("Строю маршрут...");
-      log("B set: " + pointB.lat + "," + pointB.lng);
+  map.on("click", e=>{
+    if(!A){
+      A=e.latlng;
+      mA=L.marker(A).addTo(map).bindPopup("A").openPopup();
+      document.getElementById("a").innerText =
+        `🚕 Точка A: ${A.lat.toFixed(5)}, ${A.lng.toFixed(5)}`;
+    }
+    else if(!B){
+      B=e.latlng;
+      mB=L.marker(B).addTo(map).bindPopup("B").openPopup();
+      document.getElementById("b").innerText =
+        `📍 Точка B: ${B.lat.toFixed(5)}, ${B.lng.toFixed(5)}`;
       buildRoute();
     }
   });
 
-  function buildRoute() {
-    try {
-      if (routeControl) map.removeControl(routeControl);
+  function buildRoute(){
+    if(route) map.removeControl(route);
 
-      routeControl = L.Routing.control({
-        waypoints: [
-          L.latLng(pointA.lat, pointA.lng),
-          L.latLng(pointB.lat, pointB.lng)
-        ],
-        addWaypoints: false,
-        draggableWaypoints: false,
-        routeWhileDragging: false,
-        show: false
-      })
-      .on('routesfound', (e) => {
-        distanceKm = (e.routes[0].summary.totalDistance / 1000).toFixed(2);
-        tg.MainButton.setText("🚕 Заказать (" + distanceKm + " км)");
-        tg.MainButton.enable();
-        log("✅ route found, km=" + distanceKm);
-        tg.showAlert?.("Маршрут построен: " + distanceKm + " км");
-      })
-      .on('routingerror', (err) => {
-        log("❌ routingerror: " + JSON.stringify(err));
-        tg.MainButton.setText("Маршрут не построен");
-        tg.showAlert?.("❌ Ошибка построения маршрута");
-      })
-      .addTo(map);
-
-    } catch (e) {
-      log("❌ buildRoute exception: " + (e?.message || e));
-      tg.showAlert?.("❌ Ошибка buildRoute");
-    }
+    route=L.Routing.control({
+      waypoints:[A,B],
+      addWaypoints:false,
+      draggableWaypoints:false,
+      show:false
+    })
+    .on("routesfound",e=>{
+      km=(e.routes[0].summary.totalDistance/1000).toFixed(2);
+      document.getElementById("d").innerText=`📏 Расстояние: ${km} км`;
+      document.getElementById("send").disabled=false;
+    })
+    .addTo(map);
   }
 
-  // --- Клик по MainButton: подписка ДВУМЯ способами ---
-  function handleMainButtonClick(src) {
-    log("🔥 MainButton click from: " + src);
+  // ===============================
+  // SEND DATA (100% WORKS)
+  // ===============================
+  document.getElementById("send").onclick=()=>{
+    if(!A||!B||!km) return;
 
-    // 1) Должен показать алерт всегда — если не показывает, клик реально не ловится
-    tg.showAlert?.("✅ Клик пойман (" + src + ")");
-
-    // 2) Если точки не выбраны — покажем почему
-    if (!pointA || !pointB) {
-      tg.showAlert?.("Сначала выбери A и B на карте");
-      return;
-    }
-
-    const payload = {
-      from: { lat: pointA.lat, lng: pointA.lng },
-      to: { lat: pointB.lat, lng: pointB.lng },
-      distance_km: distanceKm || "0"
+    const data={
+      start:{lat:A.lat,lng:A.lng},
+      end:{lat:B.lat,lng:B.lng},
+      distance_km:km
     };
 
-    log("➡️ sendData: " + JSON.stringify(payload));
-
-    try {
-      tg.sendData(JSON.stringify(payload));
-      tg.MainButton.disable();
-      tg.MainButton.setText("Отправлено ✅");
-    } catch (e) {
-      log("❌ sendData exception: " + (e?.message || e));
-      tg.showAlert?.("❌ sendData exception");
-    }
-  }
-
-  // Способ 1
-  tg.MainButton.onClick(() => handleMainButtonClick("MainButton.onClick"));
-
-  // Способ 2 (совместимость)
-  tg.onEvent?.("mainButtonClicked", () => handleMainButtonClick("tg.onEvent(mainButtonClicked)"));
+    tg.sendData(JSON.stringify(data));
+    tg.close();
+  };
 </script>
 
 </body>
