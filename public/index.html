@@ -1,44 +1,36 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8">
   <title>Taxi Map</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- Telegram WebApp -->
+  <!-- Telegram -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-
-  <!-- MapLibre -->
-  <link
-    href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css"
-    rel="stylesheet"
-  />
-  <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
 
   <style>
     html, body {
       margin: 0;
       padding: 0;
       height: 100%;
+      font-family: Arial, sans-serif;
     }
 
     #map {
-      position: absolute;
-      top: 0;
-      bottom: 120px;
-      left: 0;
-      right: 0;
+      height: calc(100% - 140px);
+      width: 100%;
     }
 
     #panel {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
+      height: 140px;
+      padding: 10px;
       background: #fff;
-      padding: 12px;
       box-shadow: 0 -2px 10px rgba(0,0,0,.3);
-      font-family: sans-serif;
+    }
+
+    .row {
+      font-size: 15px;
+      margin-bottom: 4px;
     }
 
     button {
@@ -49,7 +41,7 @@
       color: white;
       border: none;
       border-radius: 8px;
-      cursor: pointer;
+      margin-top: 6px;
     }
 
     button:disabled {
@@ -63,7 +55,9 @@
 <div id="map"></div>
 
 <div id="panel">
-  <div id="info">📍 Выберите точку A и B</div>
+  <div class="row" id="a">📍 Точка A: не выбрана</div>
+  <div class="row" id="b">🏁 Точка B: не выбрана</div>
+  <div class="row" id="d">📏 Расстояние: —</div>
   <button id="send" disabled>🚕 Отправить заказ</button>
 </div>
 
@@ -72,54 +66,80 @@
   tg.ready();
   tg.expand();
 
-  // 📍 ДЮРТЮЛИ
-  const map = new maplibregl.Map({
-    container: 'map',
-    style: 'https://demotiles.maplibre.org/style.json',
-    center: [54.8526, 55.4842], // lng, lat
-    zoom: 13
-  });
-
-  let A = null;
-  let B = null;
+  let map;
   let markerA = null;
   let markerB = null;
+  let A = null;
+  let B = null;
+  let distanceKm = null;
 
-  const info = document.getElementById("info");
-  const sendBtn = document.getElementById("send");
+  function initMap() {
+    map = new google.maps.Map(document.getElementById("map"), {
+      zoom: 13,
+      center: { lat: 55.4842, lng: 54.8526 }, // Дюртюли
+    });
 
-  map.on('click', (e) => {
-    if (!A) {
-      A = e.lngLat;
-      markerA = new maplibregl.Marker({ color: "green" })
-        .setLngLat(A)
-        .addTo(map);
+    const directionsService = new google.maps.DirectionsService();
+    const directionsRenderer = new google.maps.DirectionsRenderer({
+      suppressMarkers: true
+    });
+    directionsRenderer.setMap(map);
 
-      info.innerText = "📍 Точка A выбрана";
-    }
-    else if (!B) {
-      B = e.lngLat;
-      markerB = new maplibregl.Marker({ color: "red" })
-        .setLngLat(B)
-        .addTo(map);
+    map.addListener("click", (e) => {
+      if (!A) {
+        A = e.latLng;
+        markerA = new google.maps.Marker({
+          position: A,
+          map,
+          label: "A"
+        });
+        document.getElementById("a").innerText =
+          `📍 Точка A: ${A.lat().toFixed(5)}, ${A.lng().toFixed(5)}`;
+      }
+      else if (!B) {
+        B = e.latLng;
+        markerB = new google.maps.Marker({
+          position: B,
+          map,
+          label: "B"
+        });
+        document.getElementById("b").innerText =
+          `🏁 Точка B: ${B.lat().toFixed(5)}, ${B.lng().toFixed(5)}`;
 
-      info.innerText = "🏁 Точка B выбрана";
-      sendBtn.disabled = false;
-    }
-  });
+        directionsService.route({
+          origin: A,
+          destination: B,
+          travelMode: google.maps.TravelMode.DRIVING
+        }, (res, status) => {
+          if (status === "OK") {
+            directionsRenderer.setDirections(res);
+            const meters = res.routes[0].legs[0].distance.value;
+            distanceKm = (meters / 1000).toFixed(2);
+            document.getElementById("d").innerText =
+              `📏 Расстояние: ${distanceKm} км`;
+            document.getElementById("send").disabled = false;
+          }
+        });
+      }
+    });
 
-  sendBtn.onclick = () => {
-    if (!A || !B) return;
+    document.getElementById("send").onclick = () => {
+      if (!A || !B) return;
 
-    const payload = {
-      from: { lat: A.lat, lng: A.lng },
-      to: { lat: B.lat, lng: B.lng }
+      const data = {
+        from: { lat: A.lat(), lng: A.lng() },
+        to: { lat: B.lat(), lng: B.lng() },
+        distance_km: distanceKm
+      };
+
+      tg.sendData(JSON.stringify(data));
+      setTimeout(() => tg.close(), 300);
     };
+  }
+</script>
 
-    tg.sendData(JSON.stringify(payload));
-
-    setTimeout(() => tg.close(), 300);
-  };
+<script async
+  src="https://maps.googleapis.com/maps/api/js?key=ТВОЙ_API_KEY&callback=initMap">
 </script>
 
 </body>
