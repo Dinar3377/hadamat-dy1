@@ -8,9 +8,12 @@
   <!-- Telegram WebApp -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- MapLibre -->
+  <link
+    href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css"
+    rel="stylesheet"
+  />
+  <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
 
   <style>
     html, body {
@@ -69,12 +72,13 @@
   tg.ready();
   tg.expand();
 
-  // 📍 Дюртюли
-  const map = L.map("map").setView([55.4842, 54.8526], 13);
-
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "© OpenStreetMap"
-  }).addTo(map);
+  // 📍 ДЮРТЮЛИ
+  const map = new maplibregl.Map({
+    container: 'map',
+    style: 'https://demotiles.maplibre.org/style.json',
+    center: [54.8526, 55.4842], // lng, lat
+    zoom: 13
+  });
 
   let A = null;
   let B = null;
@@ -84,15 +88,21 @@
   const info = document.getElementById("info");
   const sendBtn = document.getElementById("send");
 
-  map.on("click", e => {
+  map.on('click', (e) => {
     if (!A) {
-      A = e.latlng;
-      markerA = L.marker(A).addTo(map);
+      A = e.lngLat;
+      markerA = new maplibregl.Marker({ color: "green" })
+        .setLngLat(A)
+        .addTo(map);
+
       info.innerText = "📍 Точка A выбрана";
     }
     else if (!B) {
-      B = e.latlng;
-      markerB = L.marker(B).addTo(map);
+      B = e.lngLat;
+      markerB = new maplibregl.Marker({ color: "red" })
+        .setLngLat(B)
+        .addTo(map);
+
       info.innerText = "🏁 Точка B выбрана";
       sendBtn.disabled = false;
     }
@@ -101,12 +111,12 @@
   sendBtn.onclick = () => {
     if (!A || !B) return;
 
-    const data = {
+    const payload = {
       from: { lat: A.lat, lng: A.lng },
       to: { lat: B.lat, lng: B.lng }
     };
 
-    tg.sendData(JSON.stringify(data));
+    tg.sendData(JSON.stringify(payload));
 
     setTimeout(() => tg.close(), 300);
   };
