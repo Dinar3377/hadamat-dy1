@@ -18,17 +18,66 @@
   <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
 
   <style>
-    body, html { margin:0; padding:0; height:100%; }
-    #map { height: 85%; }
-    .controls {
-      height: 15%;
-      display: flex;
-      gap: 6px;
-      padding: 6px;
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f2f2f2;
     }
-    button {
+
+    #map {
+      height: calc(100% - 90px);
+    }
+
+    .controls {
+      height: 90px;
+      display: flex;
+      gap: 10px;
+      padding: 12px;
+      background: #ffffff;
+      box-shadow: 0 -4px 12px rgba(0,0,0,0.12);
+      border-top-left-radius: 18px;
+      border-top-right-radius: 18px;
+    }
+
+    .btn {
       flex: 1;
-      font-size: 14px;
+      border: none;
+      border-radius: 14px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn:active {
+      transform: scale(0.96);
+    }
+
+    .btn-location {
+      background: #e3f2fd;
+      color: #0d47a1;
+    }
+
+    .btn-clear {
+      background: #ffebee;
+      color: #b71c1c;
+    }
+
+    .btn-order {
+      background: linear-gradient(135deg, #00c853, #00e676);
+      color: #ffffff;
+      box-shadow: 0 4px 10px rgba(0,200,83,0.4);
+    }
+
+    .btn-order:disabled {
+      background: #bdbdbd;
+      box-shadow: none;
     }
   </style>
 </head>
@@ -38,9 +87,9 @@
 <div id="map"></div>
 
 <div class="controls">
-  <button onclick="setMyLocation()">📍 Моё место</button>
-  <button onclick="clearPoints()">❌ Очистить</button>
-  <button onclick="sendOrder()">✅ Заказать</button>
+  <button class="btn btn-location" onclick="setMyLocation()">📍 Моё место</button>
+  <button class="btn btn-clear" onclick="clearPoints()">❌ Очистить</button>
+  <button class="btn btn-order" id="orderBtn" onclick="sendOrder()" disabled>✅ Заказать</button>
 </div>
 
 <script>
@@ -60,11 +109,11 @@
   let pointB = null;
   let markerA = null;
   let markerB = null;
-
   let routeControl = null;
   let distanceKm = 0;
 
-  // Клик по карте
+  const orderBtn = document.getElementById("orderBtn");
+
   map.on('click', (e) => {
     if (!pointA) {
       pointA = e.latlng;
@@ -76,7 +125,6 @@
     }
   });
 
-  // Моё местоположение
   function setMyLocation() {
     map.locate({ setView: true, maxZoom: 16 });
     map.once('locationfound', (e) => {
@@ -86,14 +134,8 @@
     });
   }
 
-  // Построение маршрута + расчёт км
   function buildRoute() {
-    if (!pointA || !pointB) return;
-
-    if (routeControl) {
-      map.removeControl(routeControl);
-      routeControl = null;
-    }
+    if (routeControl) map.removeControl(routeControl);
 
     routeControl = L.Routing.control({
       waypoints: [
@@ -106,8 +148,8 @@
       show: false
     })
     .on('routesfound', function (e) {
-      const route = e.routes[0];
-      distanceKm = (route.summary.totalDistance / 1000).toFixed(2);
+      distanceKm = (e.routes[0].summary.totalDistance / 1000).toFixed(2);
+      orderBtn.disabled = false;
 
       tg.showPopup({
         title: "Маршрут построен",
@@ -118,7 +160,6 @@
     .addTo(map);
   }
 
-  // Очистка точек и маршрута
   function clearPoints() {
     if (markerA) map.removeLayer(markerA);
     if (markerB) map.removeLayer(markerB);
@@ -130,22 +171,17 @@
     markerB = null;
     routeControl = null;
     distanceKm = 0;
+    orderBtn.disabled = true;
   }
 
-  // Отправка заказа в бота
   function sendOrder() {
-    if (!pointA || !pointB) {
-      tg.showAlert("Укажите точку A и точку B");
-      return;
-    }
+    if (!pointA || !pointB) return;
 
-    const data = {
+    tg.sendData(JSON.stringify({
       from: pointA,
       to: pointB,
       distance_km: distanceKm
-    };
-
-    tg.sendData(JSON.stringify(data));
+    }));
   }
 </script>
 
