@@ -55,30 +55,16 @@
       gap: 6px;
     }
 
-    .btn:active {
-      transform: scale(0.96);
-    }
+    .btn:active { transform: scale(0.96); }
 
-    .btn-location {
-      background: #e3f2fd;
-      color: #0d47a1;
-    }
-
-    .btn-clear {
-      background: #ffebee;
-      color: #b71c1c;
-    }
-
+    .btn-location { background: #e3f2fd; color: #0d47a1; }
+    .btn-clear { background: #ffebee; color: #b71c1c; }
     .btn-order {
       background: linear-gradient(135deg, #00c853, #00e676);
-      color: #ffffff;
+      color: #fff;
       box-shadow: 0 4px 10px rgba(0,200,83,0.4);
     }
-
-    .btn-order:disabled {
-      background: #bdbdbd;
-      box-shadow: none;
-    }
+    .btn-order:disabled { background: #bdbdbd; box-shadow: none; }
   </style>
 </head>
 
@@ -96,21 +82,19 @@
   const tg = window.Telegram.WebApp;
   tg.expand();
 
-  // Центр Дюртюли
   const CENTER = [55.4842, 54.8526];
-
   const map = L.map('map').setView(CENTER, 13);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap'
   }).addTo(map);
 
-  let pointA = null;
-  let pointB = null;
-  let markerA = null;
-  let markerB = null;
+  let pointA = null, pointB = null;
+  let markerA = null, markerB = null;
   let routeControl = null;
   let distanceKm = 0;
+
+  let geoRequested = false; // 🔥 ВАЖНО
 
   const orderBtn = document.getElementById("orderBtn");
 
@@ -126,11 +110,42 @@
   });
 
   function setMyLocation() {
-    map.locate({ setView: true, maxZoom: 16 });
+    if (geoRequested) {
+      tg.showPopup({
+        title: "Геолокация",
+        message: "Геолокация уже запрашивалась.\nЕсли нужно — выберите точку вручную на карте.",
+        buttons: [{ type: "ok" }]
+      });
+      return;
+    }
+
+    geoRequested = true;
+
+    map.locate({
+      setView: true,
+      maxZoom: 16,
+      enableHighAccuracy: true
+    });
+
     map.once('locationfound', (e) => {
       clearPoints();
       pointA = e.latlng;
-      markerA = L.marker(pointA).addTo(map).bindPopup("Моё место").openPopup();
+      markerA = L.marker(pointA)
+        .addTo(map)
+        .bindPopup("📍 Моё местоположение")
+        .openPopup();
+    });
+
+    map.once('locationerror', () => {
+      tg.showPopup({
+        title: "Геолокация недоступна",
+        message:
+          "Проверьте:\n" +
+          "• WebApp открыт из Telegram\n" +
+          "• разрешён доступ к геолокации\n" +
+          "• GPS включён",
+        buttons: [{ type: "ok" }]
+      });
     });
   }
 
@@ -165,10 +180,8 @@
     if (markerB) map.removeLayer(markerB);
     if (routeControl) map.removeControl(routeControl);
 
-    pointA = null;
-    pointB = null;
-    markerA = null;
-    markerB = null;
+    pointA = pointB = null;
+    markerA = markerB = null;
     routeControl = null;
     distanceKm = 0;
     orderBtn.disabled = true;
