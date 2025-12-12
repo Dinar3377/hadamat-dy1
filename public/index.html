@@ -17,8 +17,17 @@
   <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
 
   <style>
-    html, body { height: 100%; margin: 0; }
-    #map { height: 100%; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f2f2f2;
+    }
+
+    #map {
+      height: 100%;
+    }
   </style>
 </head>
 
@@ -30,17 +39,16 @@
   const tg = window.Telegram.WebApp;
   tg.expand();
 
-  // 🔴 ГЛАВНАЯ КНОПКА TELEGRAM
+  // 🔘 НАСТРОЙКА MAIN BUTTON (ЕДИНСТВЕННЫЙ СПОСОБ ОТПРАВКИ)
   tg.MainButton.setText("🚕 Заказать такси");
-  tg.MainButton.disable();
-  tg.MainButton.show();
+  tg.MainButton.hide();
+  tg.MainButton.enable();
 
-  // Центр Дюртюли
   const CENTER = [55.4842, 54.8526];
   const map = L.map('map').setView(CENTER, 13);
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "© OpenStreetMap"
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap'
   }).addTo(map);
 
   let pointA = null;
@@ -50,21 +58,24 @@
   let routeControl = null;
   let distanceKm = 0;
 
-  // 📍 Выбор точек кликом
-  map.on("click", (e) => {
+  // 📍 КЛИКИ ПО КАРТЕ
+  map.on('click', (e) => {
     if (!pointA) {
       pointA = e.latlng;
       markerA = L.marker(pointA).addTo(map).bindPopup("📍 Точка A").openPopup();
-    } else if (!pointB) {
+    } 
+    else if (!pointB) {
       pointB = e.latlng;
       markerB = L.marker(pointB).addTo(map).bindPopup("🏁 Точка B").openPopup();
       buildRoute();
     }
   });
 
-  // 🛣 Строим маршрут
+  // 🛣 ПОСТРОЕНИЕ МАРШРУТА
   function buildRoute() {
-    if (routeControl) map.removeControl(routeControl);
+    if (routeControl) {
+      map.removeControl(routeControl);
+    }
 
     routeControl = L.Routing.control({
       waypoints: [
@@ -73,18 +84,29 @@
       ],
       addWaypoints: false,
       draggableWaypoints: false,
+      routeWhileDragging: false,
       show: false
     })
-    .on("routesfound", (e) => {
+    .on('routesfound', (e) => {
       distanceKm = (e.routes[0].summary.totalDistance / 1000).toFixed(2);
-      tg.MainButton.enable(); // ✅ ВКЛЮЧАЕМ КНОПКУ
+
+      tg.MainButton.show();
+
+      tg.showPopup({
+        title: "Маршрут готов",
+        message: `Расстояние: ${distanceKm} км`,
+        buttons: [{ type: "ok" }]
+      });
     })
     .addTo(map);
   }
 
-  // 🚕 ОТПРАВКА ДАННЫХ (ГАРАНТИРОВАНО)
+  // ✅ КЛИК ПО MAIN BUTTON
   tg.MainButton.onClick(() => {
-    if (!pointA || !pointB) return;
+    if (!pointA || !pointB) {
+      tg.showAlert("Выберите точки A и B");
+      return;
+    }
 
     const payload = {
       from: { lat: pointA.lat, lng: pointA.lng },
@@ -92,13 +114,11 @@
       distance_km: distanceKm
     };
 
+    // 🔥 ЕДИНСТВЕННАЯ РАБОЧАЯ ОТПРАВКА
     tg.sendData(JSON.stringify(payload));
 
-    setTimeout(() => {
-      tg.close();
-    }, 300);
+    tg.MainButton.disable();
   });
-
 </script>
 
 </body>
