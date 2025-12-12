@@ -217,6 +217,16 @@
     }, 400);
   }
 </script>
+<script>
+  const tg = window.Telegram.WebApp;
 
+  if (!tg.initData || tg.initData.length === 0) {
+    alert("❌ ЭТО НЕ TELEGRAM WEBAPP");
+  } else {
+    alert("✅ TELEGRAM WEBAPP OK");
+  }
+
+  tg.expand();
+</script>
 </body>
 </html>
