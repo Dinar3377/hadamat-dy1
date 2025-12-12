@@ -6,7 +6,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- Telegram -->
+  <!-- Telegram WebApp -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
   <!-- Leaflet -->
@@ -59,12 +59,17 @@
 
     .btn-location { background: #e3f2fd; color: #0d47a1; }
     .btn-clear { background: #ffebee; color: #b71c1c; }
+
     .btn-order {
       background: linear-gradient(135deg, #00c853, #00e676);
       color: #fff;
       box-shadow: 0 4px 10px rgba(0,200,83,0.4);
     }
-    .btn-order:disabled { background: #bdbdbd; box-shadow: none; }
+
+    .btn-order:disabled {
+      background: #bdbdbd;
+      box-shadow: none;
+    }
   </style>
 </head>
 
@@ -82,32 +87,38 @@
   const tg = window.Telegram.WebApp;
   tg.expand();
 
+  // 📍 Центр Дюртюли
   const CENTER = [55.4842, 54.8526];
+
   const map = L.map('map').setView(CENTER, 13);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap'
   }).addTo(map);
 
-  let pointA = null, pointB = null;
-  let markerA = null, markerB = null;
+  let pointA = null;
+  let pointB = null;
+  let markerA = null;
+  let markerB = null;
   let routeControl = null;
   let distanceKm = 0;
   let geoRequested = false;
 
   const orderBtn = document.getElementById("orderBtn");
 
+  // 🖱 Клики по карте
   map.on('click', (e) => {
     if (!pointA) {
       pointA = e.latlng;
-      markerA = L.marker(pointA).addTo(map).bindPopup("Точка A").openPopup();
+      markerA = L.marker(pointA).addTo(map).bindPopup("📍 Точка A").openPopup();
     } else if (!pointB) {
       pointB = e.latlng;
-      markerB = L.marker(pointB).addTo(map).bindPopup("Точка B").openPopup();
+      markerB = L.marker(pointB).addTo(map).bindPopup("🏁 Точка B").openPopup();
       buildRoute();
     }
   });
 
+  // 📍 Моё местоположение
   function setMyLocation() {
     if (geoRequested) {
       tg.showPopup({
@@ -120,7 +131,11 @@
 
     geoRequested = true;
 
-    map.locate({ setView: true, maxZoom: 16, enableHighAccuracy: true });
+    map.locate({
+      setView: true,
+      maxZoom: 16,
+      enableHighAccuracy: true
+    });
 
     map.once('locationfound', (e) => {
       clearPoints();
@@ -133,17 +148,14 @@
 
     map.once('locationerror', () => {
       tg.showPopup({
-        title: "Геолокация недоступна",
-        message:
-          "Проверьте:\n" +
-          "• WebApp открыт из Telegram\n" +
-          "• разрешён доступ к геолокации\n" +
-          "• GPS включён",
+        title: "Ошибка геолокации",
+        message: "Разрешите доступ к геолокации в Telegram.",
         buttons: [{ type: "ok" }]
       });
     });
   }
 
+  // 🛣 Построение маршрута
   function buildRoute() {
     if (routeControl) map.removeControl(routeControl);
 
@@ -157,7 +169,7 @@
       routeWhileDragging: false,
       show: false
     })
-    .on('routesfound', function (e) {
+    .on('routesfound', (e) => {
       distanceKm = (e.routes[0].summary.totalDistance / 1000).toFixed(2);
       orderBtn.disabled = false;
 
@@ -170,31 +182,39 @@
     .addTo(map);
   }
 
+  // ❌ Очистка
   function clearPoints() {
     if (markerA) map.removeLayer(markerA);
     if (markerB) map.removeLayer(markerB);
     if (routeControl) map.removeControl(routeControl);
 
-    pointA = pointB = null;
-    markerA = markerB = null;
+    pointA = null;
+    pointB = null;
+    markerA = null;
+    markerB = null;
     routeControl = null;
     distanceKm = 0;
     orderBtn.disabled = true;
   }
 
+  // 🚕 Отправка заказа в Telegram
   function sendOrder() {
     if (!pointA || !pointB) return;
 
-    orderBtn.disabled = true; // защита от двойного клика
+    orderBtn.disabled = true;
 
-    tg.sendData(JSON.stringify({
-      from: pointA,
-      to: pointB,
+    const payload = {
+      from: { lat: pointA.lat, lng: pointA.lng },
+      to: { lat: pointB.lat, lng: pointB.lng },
       distance_km: distanceKm
-    }));
+    };
 
-    // 🔥 ВАЖНО: закрываем WebApp
-    tg.close();
+    tg.sendData(JSON.stringify(payload));
+
+    // ⏳ ОБЯЗАТЕЛЬНАЯ ЗАДЕРЖКА
+    setTimeout(() => {
+      tg.close();
+    }, 400);
   }
 </script>
 
