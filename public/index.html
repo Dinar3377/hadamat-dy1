@@ -9,17 +9,11 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
   <!-- Leaflet -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <!-- Routing -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"
-  />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
   <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
   <style>
@@ -36,7 +30,7 @@
       top: 0;
       left: 0;
       right: 0;
-      bottom: 130px; /* место под панель */
+      bottom: 130px;
     }
 
     #panel {
@@ -46,29 +40,36 @@
       right: 10px;
       background: white;
       border-radius: 12px;
-      padding: 10px;
+      padding: 15px;
       box-shadow: 0 0 12px rgba(0,0,0,0.25);
       z-index: 9999;
     }
 
     .row {
-      margin-bottom: 6px;
+      margin-bottom: 8px;
       font-size: 14px;
+      color: #333;
     }
 
     .buttons {
       display: flex;
-      gap: 8px;
-      margin-top: 8px;
+      gap: 10px;
+      margin-top: 12px;
     }
 
     button {
       flex: 1;
-      padding: 12px;
+      padding: 14px;
       border: none;
-      border-radius: 8px;
+      border-radius: 10px;
       font-size: 15px;
+      font-weight: 600;
       cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    button:active {
+      transform: scale(0.98);
     }
 
     #locate {
@@ -82,12 +83,14 @@
     }
 
     #send {
-      background: #00c853;
+      background: linear-gradient(135deg, #00c853, #00e676);
       color: white;
+      box-shadow: 0 4px 15px rgba(0,200,83,0.3);
     }
 
     #send:disabled {
-      background: #bdbdbd;
+      background: #cccccc;
+      box-shadow: none;
       cursor: not-allowed;
     }
   </style>
@@ -111,121 +114,239 @@
 
 <script>
   // ============================================================
-  // TELEGRAM INIT
+  // 🔥 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Инициализация Telegram WebApp
   // ============================================================
-  const tg = window.Telegram.WebApp;
-  tg.ready();
-  tg.expand();
-
-  // ============================================================
-  // MAP INIT (ДЮРТЮЛИ)
-  // ============================================================
-  const map = L.map("map").setView([55.4842, 54.8526], 13);
-
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "© OpenStreetMap"
-  }).addTo(map);
-
-  let A = null;
-  let B = null;
-  let markerA = null;
-  let markerB = null;
-  let route = null;
-  let distanceKm = null;
-
-  const aEl = document.getElementById("a");
-  const bEl = document.getElementById("b");
-  const dEl = document.getElementById("dist");
-  const sendBtn = document.getElementById("send");
-
-  // ============================================================
-  // MAP CLICK
-  // ============================================================
-  map.on("click", e => {
-    if (!A) {
-      A = e.latlng;
-      markerA = L.marker(A).addTo(map);
-      aEl.innerText = `📍 Точка A: ${A.lat.toFixed(5)}, ${A.lng.toFixed(5)}`;
-    } 
-    else if (!B) {
-      B = e.latlng;
-      markerB = L.marker(B).addTo(map);
-      bEl.innerText = `🏁 Точка B: ${B.lat.toFixed(5)}, ${B.lng.toFixed(5)}`;
-      buildRoute();
+  
+  // Ждем полной загрузки страницы
+  document.addEventListener('DOMContentLoaded', function() {
+    // Проверяем доступность Telegram WebApp
+    if (typeof Telegram !== 'undefined' && Telegram.WebApp) {
+      const tg = Telegram.WebApp;
+      
+      // 🔥 Инициализация в правильном порядке
+      tg.ready();
+      tg.expand();
+      
+      // Разрешаем отправку сообщений
+      tg.enableClosingConfirmation();
+      
+      // Сохраняем tg в глобальной переменной для доступа из функций
+      window.tg = tg;
+      
+      console.log('Telegram WebApp инициализирован:', tg.initDataUnsafe?.user);
+    } else {
+      console.error('Telegram WebApp не обнаружен!');
+      // Режим отладки в браузере
+      window.tg = {
+        sendData: function(data) {
+          console.log('📤 ДЕМО: Отправка данных:', data);
+          alert('Демо-режим: Данные отправлены: ' + data);
+        },
+        close: function() {
+          console.log('ДЕМО: Закрытие WebApp');
+        },
+        showPopup: function(params) {
+          alert(params.title + ': ' + params.message);
+        }
+      };
     }
+    
+    // Теперь инициализируем карту
+    initMap();
   });
 
   // ============================================================
-  // ROUTE
+  // 🗺 ИНИЦИАЛИЗАЦИЯ КАРТЫ (ДЮРТЮЛИ)
   // ============================================================
-  function buildRoute() {
-    if (route) map.removeControl(route);
+  function initMap() {
+    const map = L.map("map").setView([55.4842, 54.8526], 13);
 
-    route = L.Routing.control({
-      waypoints: [
-        L.latLng(A.lat, A.lng),
-        L.latLng(B.lat, B.lng)
-      ],
-      addWaypoints: false,
-      draggableWaypoints: false,
-      show: false
-    })
-    .on("routesfound", e => {
-      distanceKm = (e.routes[0].summary.totalDistance / 1000).toFixed(2);
-      dEl.innerText = `📏 Расстояние: ${distanceKm} км`;
-      sendBtn.disabled = false;
-    })
-    .addTo(map);
-  }
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap"
+    }).addTo(map);
 
-  // ============================================================
-  // GEOLOCATION
-  // ============================================================
-  document.getElementById("locate").onclick = () => {
-    map.locate({ enableHighAccuracy: true });
+    // Сохраняем map в глобальной переменной
+    window.map = map;
+    window.A = null;
+    window.B = null;
+    window.markerA = null;
+    window.markerB = null;
+    window.route = null;
+    window.distanceKm = null;
 
-    map.once("locationfound", e => {
-      clearAll();
-      A = e.latlng;
-      markerA = L.marker(A).addTo(map);
-      aEl.innerText = `📍 Точка A: ${A.lat.toFixed(5)}, ${A.lng.toFixed(5)}`;
-      map.setView(A, 15);
+    const aEl = document.getElementById("a");
+    const bEl = document.getElementById("b");
+    const dEl = document.getElementById("dist");
+    const sendBtn = document.getElementById("send");
+
+    // ============================================================
+    // ОБРАБОТЧИКИ СОБЫТИЙ
+    // ============================================================
+    
+    // Клик по карте
+    map.on("click", e => {
+      if (!window.A) {
+        window.A = e.latlng;
+        window.markerA = L.marker(window.A).addTo(map);
+        aEl.innerText = `📍 Точка A: ${window.A.lat.toFixed(5)}, ${window.A.lng.toFixed(5)}`;
+      } 
+      else if (!window.B) {
+        window.B = e.latlng;
+        window.markerB = L.marker(window.B).addTo(map);
+        bEl.innerText = `🏁 Точка B: ${window.B.lat.toFixed(5)}, ${window.B.lng.toFixed(5)}`;
+        buildRoute();
+      }
     });
-  };
 
-  // ============================================================
-  // CLEAR
-  // ============================================================
-  function clearAll() {
-    if (markerA) map.removeLayer(markerA);
-    if (markerB) map.removeLayer(markerB);
-    if (route) map.removeControl(route);
+    // Геолокация
+    document.getElementById("locate").onclick = () => {
+      map.locate({ 
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      });
 
-    A = B = markerA = markerB = route = distanceKm = null;
-    aEl.innerText = "📍 Точка A: не выбрана";
-    bEl.innerText = "🏁 Точка B: не выбрана";
-    dEl.innerText = "📏 Расстояние: —";
-    sendBtn.disabled = true;
-  }
+      map.once("locationfound", e => {
+        clearAll();
+        window.A = e.latlng;
+        window.markerA = L.marker(window.A).addTo(map);
+        aEl.innerText = `📍 Точка A (мой адрес): ${window.A.lat.toFixed(5)}, ${window.A.lng.toFixed(5)}`;
+        map.setView(window.A, 15);
+        
+        // Показываем уведомление
+        if (window.tg && window.tg.showPopup) {
+          window.tg.showPopup({
+            title: "Местоположение",
+            message: "Ваше местоположение установлено как точка А",
+            buttons: [{ type: "ok" }]
+          });
+        }
+      });
 
-  document.getElementById("clear").onclick = clearAll;
-
-  // ============================================================
-  // SEND TO BOT (🔥 100% WORKING)
-  // ============================================================
-  sendBtn.onclick = () => {
-    if (!A || !B || !distanceKm) return;
-
-    const payload = {
-      from: { lat: A.lat, lng: A.lng },
-      to: { lat: B.lat, lng: B.lng },
-      distance_km: distanceKm
+      map.once("locationerror", e => {
+        console.error("Геолокация не удалась:", e.message);
+        alert("Не удалось определить ваше местоположение. Разрешите доступ к геолокации или выберите точку на карте.");
+      });
     };
 
-    tg.sendData(JSON.stringify(payload));
+    // Очистка
+    document.getElementById("clear").onclick = clearAll;
 
-    setTimeout(() => tg.close(), 300);
-  };
+    // Отправка заказа
+    sendBtn.onclick = sendOrder;
+    
+    // Функция построения маршрута
+    window.buildRoute = function() {
+      if (window.route) map.removeControl(window.route);
+
+      window.route = L.Routing.control({
+        waypoints: [
+          L.latLng(window.A.lat, window.A.lng),
+          L.latLng(window.B.lat, window.B.lng)
+        ],
+        addWaypoints: false,
+        draggableWaypoints: false,
+        show: false,
+        lineOptions: {
+          styles: [{ color: '#2196F3', weight: 4, opacity: 0.7 }]
+        }
+      })
+      .on("routesfound", e => {
+        if (e.routes && e.routes[0]) {
+          window.distanceKm = (e.routes[0].summary.totalDistance / 1000).toFixed(2);
+          dEl.innerText = `📏 Расстояние: ${window.distanceKm} км`;
+          sendBtn.disabled = false;
+          
+          // Уведомление в Telegram
+          if (window.tg && window.tg.showPopup) {
+            window.tg.showPopup({
+              title: "Маршрут построен",
+              message: `Расстояние: ${window.distanceKm} км`,
+              buttons: [{ type: "ok" }]
+            });
+          }
+        }
+      })
+      .on("routingerror", e => {
+        console.error("Ошибка построения маршрута:", e);
+        alert("Не удалось построить маршрут. Проверьте точки.");
+      })
+      .addTo(map);
+    };
+    
+    // Функция очистки
+    window.clearAll = function() {
+      if (window.markerA) map.removeLayer(window.markerA);
+      if (window.markerB) map.removeLayer(window.markerB);
+      if (window.route) map.removeControl(window.route);
+
+      window.A = window.B = window.markerA = window.markerB = window.route = window.distanceKm = null;
+      aEl.innerText = "📍 Точка A: не выбрана";
+      bEl.innerText = "🏁 Точка B: не выбрана";
+      dEl.innerText = "📏 Расстояние: —";
+      sendBtn.disabled = true;
+    };
+    
+    // Функция отправки
+    window.sendOrder = function() {
+      if (!window.A || !window.B || !window.distanceKm) {
+        alert("Выберите обе точки маршрута!");
+        return;
+      }
+
+      // Создаем объект с данными
+      const payload = {
+        from: { 
+          lat: window.A.lat.toFixed(6), 
+          lng: window.A.lng.toFixed(6) 
+        },
+        to: { 
+          lat: window.B.lat.toFixed(6), 
+          lng: window.B.lng.toFixed(6) 
+        },
+        distance_km: window.distanceKm,
+        timestamp: new Date().toISOString(),
+        user_id: window.tg?.initDataUnsafe?.user?.id || "unknown",
+        username: window.tg?.initDataUnsafe?.user?.username || "Без имени"
+      };
+
+      console.log("Отправляемые данные:", payload);
+
+      try {
+        // 🔥 Отправляем данные через Telegram WebApp
+        window.tg.sendData(JSON.stringify(payload));
+        
+        // Показываем подтверждение
+        if (window.tg.showPopup) {
+          window.tg.showPopup({
+            title: "✅ Успешно!",
+            message: "Заказ отправлен. Ожидайте такси.",
+            buttons: [{ type: "ok" }]
+          }, function(btnId) {
+            // Закрываем WebApp после нажатия OK
+            setTimeout(() => {
+              if (window.tg.close) {
+                window.tg.close();
+              }
+            }, 500);
+          });
+        } else {
+          alert("Заказ отправлен! Закройте окно.");
+          setTimeout(() => {
+            if (window.tg.close) window.tg.close();
+          }, 1500);
+        }
+        
+        // Блокируем кнопку от повторного нажатия
+        sendBtn.disabled = true;
+        sendBtn.textContent = "📤 Отправлено...";
+        
+      } catch (error) {
+        console.error("Ошибка отправки:", error);
+        alert("Ошибка отправки заказа: " + error.message);
+      }
+    };
+  }
 </script>
 
 </body>
