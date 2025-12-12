@@ -1,22 +1,16 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-</head>
-<body>
-
-<button onclick="send()">SEND</button>
-
 <script>
   const tg = window.Telegram.WebApp;
-  tg.expand();
 
-  function send() {
-    tg.sendData("PING");
-    alert("sendData called");
-  }
+  tg.MainButton.setText("🚕 Заказать такси");
+  tg.MainButton.show();
+
+  tg.MainButton.onClick(() => {
+    const payload = {
+      from: { lat: 1, lng: 2 },
+      to: { lat: 3, lng: 4 }
+    };
+
+    tg.sendData(JSON.stringify(payload));
+    tg.close();
+  });
 </script>
-
-</body>
-</html>
