@@ -36,15 +36,21 @@
 <div id="map"></div>
 
 <script>
+  // ===============================
+  // TELEGRAM INIT
+  // ===============================
   const tg = window.Telegram.WebApp;
   tg.expand();
 
-  // 🔘 НАСТРОЙКА MAIN BUTTON (ЕДИНСТВЕННЫЙ СПОСОБ ОТПРАВКИ)
+  // MAIN BUTTON — ЕДИНСТВЕННЫЙ ПРАВИЛЬНЫЙ СПОСОБ
   tg.MainButton.setText("🚕 Заказать такси");
-  tg.MainButton.hide();
-  tg.MainButton.enable();
+  tg.MainButton.show();
+  tg.MainButton.disable();
 
-  const CENTER = [55.4842, 54.8526];
+  // ===============================
+  // MAP INIT
+  // ===============================
+  const CENTER = [55.4842, 54.8526]; // Дюртюли
   const map = L.map('map').setView(CENTER, 13);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -58,20 +64,30 @@
   let routeControl = null;
   let distanceKm = 0;
 
-  // 📍 КЛИКИ ПО КАРТЕ
+  // ===============================
+  // MAP CLICK
+  // ===============================
   map.on('click', (e) => {
     if (!pointA) {
       pointA = e.latlng;
-      markerA = L.marker(pointA).addTo(map).bindPopup("📍 Точка A").openPopup();
-    } 
+      markerA = L.marker(pointA)
+        .addTo(map)
+        .bindPopup("📍 Точка A")
+        .openPopup();
+    }
     else if (!pointB) {
       pointB = e.latlng;
-      markerB = L.marker(pointB).addTo(map).bindPopup("🏁 Точка B").openPopup();
+      markerB = L.marker(pointB)
+        .addTo(map)
+        .bindPopup("🏁 Точка B")
+        .openPopup();
       buildRoute();
     }
   });
 
-  // 🛣 ПОСТРОЕНИЕ МАРШРУТА
+  // ===============================
+  // ROUTE + DISTANCE
+  // ===============================
   function buildRoute() {
     if (routeControl) {
       map.removeControl(routeControl);
@@ -90,10 +106,11 @@
     .on('routesfound', (e) => {
       distanceKm = (e.routes[0].summary.totalDistance / 1000).toFixed(2);
 
-      tg.MainButton.show();
+      // 🔥 РАЗРЕШАЕМ КНОПКУ
+      tg.MainButton.enable();
 
       tg.showPopup({
-        title: "Маршрут готов",
+        title: "Маршрут построен",
         message: `Расстояние: ${distanceKm} км`,
         buttons: [{ type: "ok" }]
       });
@@ -101,7 +118,9 @@
     .addTo(map);
   }
 
-  // ✅ КЛИК ПО MAIN BUTTON
+  // ===============================
+  // SEND DATA TO BOT
+  // ===============================
   tg.MainButton.onClick(() => {
     if (!pointA || !pointB) {
       tg.showAlert("Выберите точки A и B");
@@ -114,7 +133,7 @@
       distance_km: distanceKm
     };
 
-    // 🔥 ЕДИНСТВЕННАЯ РАБОЧАЯ ОТПРАВКА
+    // ✅ ГАРАНТИРОВАННАЯ ОТПРАВКА
     tg.sendData(JSON.stringify(payload));
 
     tg.MainButton.disable();
