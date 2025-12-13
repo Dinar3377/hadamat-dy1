@@ -3,21 +3,28 @@
 <head>
   <meta charset="UTF-8" />
   <title>Заказ такси</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 
   <!-- Telegram WebApp -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
   <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <!-- Leaflet Routing -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css"/>
-  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"
+  />
+  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
   <style>
-    body, html {
+    html, body {
       margin: 0;
       padding: 0;
       height: 100%;
@@ -27,6 +34,7 @@
 
     #map {
       height: calc(100% - 90px);
+      width: 100%;
     }
 
     .controls {
@@ -34,7 +42,7 @@
       display: flex;
       gap: 10px;
       padding: 12px;
-      background: #fff;
+      background: #ffffff;
       box-shadow: 0 -4px 12px rgba(0,0,0,0.12);
       border-radius: 18px 18px 0 0;
     }
@@ -48,15 +56,24 @@
       cursor: pointer;
     }
 
-    .btn-location { background: #e3f2fd; color: #0d47a1; }
-    .btn-clear { background: #ffebee; color: #b71c1c; }
+    .btn-location {
+      background: #e3f2fd;
+      color: #0d47a1;
+    }
+
+    .btn-clear {
+      background: #ffebee;
+      color: #b71c1c;
+    }
+
     .btn-order {
       background: linear-gradient(135deg, #00c853, #00e676);
-      color: #fff;
+      color: #ffffff;
     }
 
     .btn-order:disabled {
       background: #bdbdbd;
+      color: #ffffff;
     }
   </style>
 </head>
@@ -66,9 +83,9 @@
 <div id="map"></div>
 
 <div class="controls">
-  <button class="btn btn-location" onclick="setMyLocation()">📍 Моё место</button>
-  <button class="btn btn-clear" onclick="clearPoints()">❌ Очистить</button>
-  <button class="btn btn-order" id="orderBtn" onclick="sendOrder()" disabled>✅ Заказать</button>
+  <button class="btn btn-location" id="btnLocation">📍 Моё место</button>
+  <button class="btn btn-clear" id="btnClear">❌ Очистить</button>
+  <button class="btn btn-order" id="orderBtn" disabled>✅ Заказать</button>
 </div>
 
 <script>
@@ -76,7 +93,10 @@
    TELEGRAM WEBAPP
 =========================================================== */
 const tg = window.Telegram?.WebApp;
-if (tg) {
+
+if (!tg) {
+  alert("Откройте приложение через Telegram");
+} else {
   tg.expand();
   tg.ready();
 }
@@ -84,7 +104,8 @@ if (tg) {
 /* ===========================================================
    MAP INIT
 =========================================================== */
-const CENTER = [55.4842, 54.8526];
+// ⛳ стартовая точка (замени при необходимости)
+const CENTER = [15.3694, 44.1910]; // Sana'a
 const map = L.map("map").setView(CENTER, 13);
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -109,10 +130,14 @@ const orderBtn = document.getElementById("orderBtn");
 map.on("click", (e) => {
   if (!pointA) {
     pointA = e.latlng;
-    markerA = L.marker(pointA).addTo(map).bindPopup("Точка A").openPopup();
+    markerA = L.marker(pointA).addTo(map)
+      .bindPopup("📍 Откуда")
+      .openPopup();
   } else if (!pointB) {
     pointB = e.latlng;
-    markerB = L.marker(pointB).addTo(map).bindPopup("Точка B").openPopup();
+    markerB = L.marker(pointB).addTo(map)
+      .bindPopup("🏁 Куда")
+      .openPopup();
     buildRoute();
   }
 });
@@ -120,7 +145,7 @@ map.on("click", (e) => {
 /* ===========================================================
    GEOLOCATION
 =========================================================== */
-function setMyLocation() {
+document.getElementById("btnLocation").onclick = () => {
   map.locate({ setView: true, maxZoom: 16 });
 
   map.once("locationfound", (e) => {
@@ -135,45 +160,42 @@ function setMyLocation() {
   map.once("locationerror", () => {
     alert("Не удалось получить геолокацию");
   });
-}
+};
 
 /* ===========================================================
-   BUILD ROUTE — FIXED OSRM
+   BUILD ROUTE (OSRM)
 =========================================================== */
 function buildRoute() {
-  if (routeControl) map.removeControl(routeControl);
+  if (routeControl) {
+    map.removeControl(routeControl);
+  }
 
   routeControl = L.Routing.control({
     waypoints: [
       L.latLng(pointA.lat, pointA.lng),
       L.latLng(pointB.lat, pointB.lng)
     ],
-
-    // 🔥 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ
     router: L.Routing.osrmv1({
       serviceUrl: "https://router.project-osrm.org/route/v1"
     }),
-
     addWaypoints: false,
     draggableWaypoints: false,
     routeWhileDragging: false,
     show: false,
     createMarker: () => null,
-
     lineOptions: {
-      styles: [{ color: "#2196F3", weight: 4, opacity: 0.8 }]
+      styles: [{ color: "#2196F3", weight: 4, opacity: 0.85 }]
     }
   });
 
   routeControl.on("routesfound", (e) => {
     if (e.routes && e.routes[0]) {
-      distanceKm = (e.routes[0].summary.totalDistance / 1000).toFixed(2);
+      distanceKm = +(e.routes[0].summary.totalDistance / 1000).toFixed(2);
       orderBtn.disabled = false;
     }
   });
 
-  routeControl.on("routingerror", (e) => {
-    console.error("Routing error:", e);
+  routeControl.on("routingerror", () => {
     alert("Не удалось построить маршрут");
   });
 
@@ -183,22 +205,27 @@ function buildRoute() {
 /* ===========================================================
    CLEAR
 =========================================================== */
+document.getElementById("btnClear").onclick = clearPoints;
+
 function clearPoints() {
   if (markerA) map.removeLayer(markerA);
   if (markerB) map.removeLayer(markerB);
   if (routeControl) map.removeControl(routeControl);
 
-  pointA = pointB = null;
-  markerA = markerB = null;
+  pointA = null;
+  pointB = null;
+  markerA = null;
+  markerB = null;
   routeControl = null;
   distanceKm = 0;
+
   orderBtn.disabled = true;
 }
 
 /* ===========================================================
    SEND TO BOT
 =========================================================== */
-function sendOrder() {
+orderBtn.onclick = () => {
   if (!pointA || !pointB) return;
 
   const payload = {
@@ -209,7 +236,7 @@ function sendOrder() {
 
   tg.sendData(JSON.stringify(payload));
   tg.close();
-}
+};
 </script>
 
 </body>
