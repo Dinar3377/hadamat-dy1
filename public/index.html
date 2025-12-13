@@ -3,24 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <title>Заказ такси</title>
-
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 
   <!-- Telegram WebApp -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
   <!-- Leaflet -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <!-- Leaflet Routing -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"
-  />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
   <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
   <style>
@@ -42,7 +35,7 @@
       display: flex;
       gap: 10px;
       padding: 12px;
-      background: #ffffff;
+      background: #fff;
       box-shadow: 0 -4px 12px rgba(0,0,0,0.12);
       border-radius: 18px 18px 0 0;
     }
@@ -56,24 +49,16 @@
       cursor: pointer;
     }
 
-    .btn-location {
-      background: #e3f2fd;
-      color: #0d47a1;
-    }
-
-    .btn-clear {
-      background: #ffebee;
-      color: #b71c1c;
-    }
-
+    .btn-location { background: #e3f2fd; color: #0d47a1; }
+    .btn-clear { background: #ffebee; color: #b71c1c; }
     .btn-order {
       background: linear-gradient(135deg, #00c853, #00e676);
-      color: #ffffff;
+      color: #fff;
     }
 
     .btn-order:disabled {
       background: #bdbdbd;
-      color: #ffffff;
+      color: #fff;
     }
   </style>
 </head>
@@ -94,9 +79,7 @@
 =========================================================== */
 const tg = window.Telegram?.WebApp;
 
-if (!tg) {
-  alert("Откройте приложение через Telegram");
-} else {
+if (tg) {
   tg.expand();
   tg.ready();
 }
@@ -104,8 +87,8 @@ if (!tg) {
 /* ===========================================================
    MAP INIT
 =========================================================== */
-// ⛳ стартовая точка (замени при необходимости)
-const CENTER = [15.3694, 44.1910]; // Sana'a
+// ⚠️ ВАЖНО: не (0,0)
+const CENTER = [55.4842, 54.8526];
 const map = L.map("map").setView(CENTER, 13);
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -163,12 +146,10 @@ document.getElementById("btnLocation").onclick = () => {
 };
 
 /* ===========================================================
-   BUILD ROUTE (OSRM)
+   BUILD ROUTE — OSRM
 =========================================================== */
 function buildRoute() {
-  if (routeControl) {
-    map.removeControl(routeControl);
-  }
+  if (routeControl) map.removeControl(routeControl);
 
   routeControl = L.Routing.control({
     waypoints: [
