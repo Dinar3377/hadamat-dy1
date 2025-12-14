@@ -1,36 +1,42 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <title>Такси</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8" />
+<title>Заказ такси</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- YANDEX MAPS -->
-  <script src="https://api-maps.yandex.ru/2.1/?apikey=dc353f10-1df9-4896-9b73-8735276c0348&lang=ru_RU"></script>
+<!-- Telegram -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-  <style>
-    html, body, #map {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-    }
-    .controls {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      display: flex;
-      gap: 10px;
-      padding: 10px;
-      background: #fff;
-    }
-    button {
-      flex: 1;
-      padding: 12px;
-      font-size: 16px;
-    }
-  </style>
+<!-- Yandex Maps -->
+<script src="https://api-maps.yandex.ru/2.1/?apikey=dc353f10-1df9-4896-9b73-8735276c0348&lang=ru_RU"></script>
+
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+#map {
+  height: calc(100% - 90px);
+}
+.controls {
+  height: 90px;
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  background: #fff;
+}
+button {
+  flex: 1;
+  font-size: 16px;
+  border-radius: 12px;
+  border: none;
+}
+.order { background: #00c853; color: #fff; }
+.clear { background: #ffebee; }
+.order:disabled { background: #aaa; }
+</style>
 </head>
 
 <body>
@@ -38,54 +44,80 @@
 <div id="map"></div>
 
 <div class="controls">
-  <button onclick="clearAll()">❌ Очистить</button>
+  <button class="clear" id="clearBtn">❌ Очистить</button>
+  <button class="order" id="orderBtn" disabled>✅ Заказать</button>
 </div>
 
 <script>
+const tg = window.Telegram.WebApp;
+tg.expand();
+tg.ready();
+
 ymaps.ready(init);
 
-let map, route, points = [];
+let map, pointA = null, pointB = null, route = null;
 
 function init() {
   map = new ymaps.Map("map", {
-    center: [55.751244, 37.618423],
+    center: [55.751244, 37.618423], // Москва по умолчанию
     zoom: 13
   });
 
-  map.events.add("click", function (e) {
-    if (points.length >= 2) return;
+  // Геолокация
+  ymaps.geolocation.get({
+    provider: 'auto',
+    mapStateAutoApply: true
+  });
 
-    const coords = e.get("coords");
-    points.push(coords);
+  map.events.add('click', async function (e) {
+    const coords = e.get('coords');
 
-    map.geoObjects.add(new ymaps.Placemark(coords));
-
-    if (points.length === 2) {
+    if (!pointA) {
+      pointA = new ymaps.Placemark(coords, { balloonContent: "Откуда" });
+      map.geoObjects.add(pointA);
+    }
+    else if (!pointB) {
+      pointB = new ymaps.Placemark(coords, { balloonContent: "Куда" });
+      map.geoObjects.add(pointB);
       buildRoute();
     }
   });
 }
 
 function buildRoute() {
-  route = new ymaps.multiRouter.MultiRoute(
-    {
-      referencePoints: points,
-      params: {
-        routingMode: "auto"
-      }
-    },
-    {
-      boundsAutoApply: true
-    }
-  );
+  if (route) map.geoObjects.remove(route);
 
-  map.geoObjects.add(route);
+  ymaps.route([
+    pointA.geometry.getCoordinates(),
+    pointB.geometry.getCoordinates()
+  ], {
+    mapStateAutoApply: true
+  }).then(function (r) {
+    route = r;
+    map.geoObjects.add(route);
+    document.getElementById("orderBtn").disabled = false;
+  }, function () {
+    alert("Маршрут не найден. Попробуйте выбрать точки ближе к дороге.");
+  });
 }
 
-function clearAll() {
+document.getElementById("clearBtn").onclick = () => {
   map.geoObjects.removeAll();
-  points = [];
-}
+  pointA = pointB = route = null;
+  document.getElementById("orderBtn").disabled = true;
+};
+
+document.getElementById("orderBtn").onclick = () => {
+  const length = route.getLength() / 1000;
+
+  tg.sendData(JSON.stringify({
+    from: pointA.geometry.getCoordinates(),
+    to: pointB.geometry.getCoordinates(),
+    distance_km: length.toFixed(2)
+  }));
+
+  tg.close();
+};
 </script>
 
 </body>
