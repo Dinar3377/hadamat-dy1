@@ -21,8 +21,8 @@
       margin: 0;
       padding: 0;
       height: 100%;
-      background: #f2f2f2;
       font-family: system-ui, -apple-system, BlinkMacSystemFont;
+      background: #f2f2f2;
     }
 
     #map {
@@ -51,14 +51,8 @@
 
     .btn-location { background: #e3f2fd; color: #0d47a1; }
     .btn-clear { background: #ffebee; color: #b71c1c; }
-    .btn-order {
-      background: linear-gradient(135deg, #00c853, #00e676);
-      color: #fff;
-    }
-
-    .btn-order:disabled {
-      background: #bdbdbd;
-    }
+    .btn-order { background: #00c853; color: #fff; }
+    .btn-order:disabled { background: #bdbdbd; }
   </style>
 </head>
 
@@ -84,7 +78,7 @@ if (tg) {
 }
 
 /* ===========================================================
-   MAP INIT (центр = город клиента)
+   MAP INIT — ЦЕНТР = ГОРОД КЛИЕНТА
 =========================================================== */
 const map = L.map("map");
 
@@ -106,28 +100,9 @@ let pointB = null;
 let markerA = null;
 let markerB = null;
 let routeControl = null;
-let fallbackLine = null;
 let distanceKm = 0;
 
 const orderBtn = document.getElementById("orderBtn");
-
-/* ===========================================================
-   DISTANCE (fallback)
-=========================================================== */
-function calcDistanceKm(a, b) {
-  const R = 6371;
-  const dLat = (b.lat - a.lat) * Math.PI / 180;
-  const dLng = (b.lng - a.lng) * Math.PI / 180;
-  const lat1 = a.lat * Math.PI / 180;
-  const lat2 = b.lat * Math.PI / 180;
-
-  const x =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) *
-    Math.sin(dLng / 2) ** 2;
-
-  return +(2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x))).toFixed(2);
-}
 
 /* ===========================================================
    MAP CLICK
@@ -135,10 +110,14 @@ function calcDistanceKm(a, b) {
 map.on("click", (e) => {
   if (!pointA) {
     pointA = e.latlng;
-    markerA = L.marker(pointA).addTo(map).bindPopup("📍 Откуда").openPopup();
+    markerA = L.marker(pointA).addTo(map)
+      .bindPopup("📍 Откуда")
+      .openPopup();
   } else if (!pointB) {
     pointB = e.latlng;
-    markerB = L.marker(pointB).addTo(map).bindPopup("🏁 Куда").openPopup();
+    markerB = L.marker(pointB).addTo(map)
+      .bindPopup("🏁 Куда")
+      .openPopup();
     buildRoute();
   }
 });
@@ -151,15 +130,17 @@ document.getElementById("btnLocation").onclick = () => {
   map.once("locationfound", (e) => {
     clearAll();
     pointA = e.latlng;
-    markerA = L.marker(pointA).addTo(map).bindPopup("📍 Моё место").openPopup();
+    markerA = L.marker(pointA).addTo(map)
+      .bindPopup("📍 Моё место")
+      .openPopup();
   });
 };
 
 /* ===========================================================
-   BUILD ROUTE (OSRM + fallback)
+   BUILD ROUTE — ОСНОВНОЕ ИСПРАВЛЕНИЕ
 =========================================================== */
 function buildRoute() {
-  clearRoute();
+  if (routeControl) map.removeControl(routeControl);
 
   routeControl = L.Routing.control({
     waypoints: [
@@ -167,12 +148,17 @@ function buildRoute() {
       L.latLng(pointB.lat, pointB.lng)
     ],
     router: L.Routing.osrmv1({
-      serviceUrl: "https://router.project-osrm.org/route/v1/car"
+      serviceUrl: "https://router.project-osrm.org",
+      profile: "car"
     }),
     addWaypoints: false,
     draggableWaypoints: false,
+    routeWhileDragging: false,
     show: false,
-    createMarker: () => null
+    createMarker: () => null,
+    lineOptions: {
+      styles: [{ color: "#2196F3", weight: 4 }]
+    }
   });
 
   routeControl.on("routesfound", (e) => {
@@ -180,14 +166,9 @@ function buildRoute() {
     orderBtn.disabled = false;
   });
 
-  routeControl.on("routingerror", () => {
-    // fallback
-    distanceKm = calcDistanceKm(pointA, pointB);
-    fallbackLine = L.polyline([pointA, pointB], {
-      color: "#2196F3",
-      weight: 4
-    }).addTo(map);
-    orderBtn.disabled = false;
+  routeControl.on("routingerror", (e) => {
+    console.error("OSRM ERROR:", e);
+    alert("Не удалось построить маршрут");
   });
 
   routeControl.addTo(map);
@@ -198,23 +179,18 @@ function buildRoute() {
 =========================================================== */
 document.getElementById("btnClear").onclick = clearAll;
 
-function clearRoute() {
-  if (routeControl) map.removeControl(routeControl);
-  if (fallbackLine) map.removeLayer(fallbackLine);
-  routeControl = null;
-  fallbackLine = null;
-}
-
 function clearAll() {
   if (markerA) map.removeLayer(markerA);
   if (markerB) map.removeLayer(markerB);
-  clearRoute();
+  if (routeControl) map.removeControl(routeControl);
 
   pointA = null;
   pointB = null;
   markerA = null;
   markerB = null;
+  routeControl = null;
   distanceKm = 0;
+
   orderBtn.disabled = true;
 }
 
