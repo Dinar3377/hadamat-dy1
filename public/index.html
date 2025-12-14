@@ -13,11 +13,24 @@
   <style>
     html, body { margin:0; padding:0; height:100%; background:#f2f2f2; }
     #map { height: calc(100% - 90px); }
+
     .controls {
-      height:90px; display:flex; gap:10px; padding:12px;
-      background:#fff; box-shadow:0 -4px 12px rgba(0,0,0,.12);
+      height:90px;
+      display:flex;
+      gap:10px;
+      padding:12px;
+      background:#fff;
+      box-shadow:0 -4px 12px rgba(0,0,0,.12);
     }
-    .btn { flex:1; border:none; border-radius:14px; font-weight:600; }
+
+    .btn {
+      flex:1;
+      border:none;
+      border-radius:14px;
+      font-weight:600;
+      cursor:pointer;
+    }
+
     .btn-location { background:#e3f2fd; }
     .btn-clear { background:#ffebee; }
     .btn-order { background:#00c853; color:#fff; }
@@ -36,71 +49,125 @@
 </div>
 
 <script>
+/* ================= TELEGRAM ================= */
 const tg = window.Telegram.WebApp;
 tg.expand();
 tg.ready();
 
+/* ================= MAP ================= */
 const map = L.map("map");
 map.locate({ setView:true, maxZoom:14 });
-map.on("locationerror",()=>map.setView([55.75,37.61],12));
+map.on("locationerror", () => map.setView([55.75, 37.61], 12));
 
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: "© OpenStreetMap"
+}).addTo(map);
 
-let A=null,B=null, mA=null,mB=null, routeLine=null, dist=0;
-const btn=document.getElementById("orderBtn");
+/* ================= STATE ================= */
+let A = null, B = null;
+let mA = null, mB = null;
+let routeLine = null;
+let dist = 0;
 
-map.on("click", async e=>{
-  if(!A){
-    A=e.latlng;
-    mA=L.marker(A).addTo(map).bindPopup("Откуда").openPopup();
-  }else if(!B){
-    B=e.latlng;
-    mB=L.marker(B).addTo(map).bindPopup("Куда").openPopup();
+const btn = document.getElementById("orderBtn");
+
+/* ================= MAP CLICK ================= */
+map.on("click", async e => {
+  if (!A) {
+    A = e.latlng;
+    mA = L.marker(A).addTo(map).bindPopup("Откуда").openPopup();
+  } else if (!B) {
+    B = e.latlng;
+    mB = L.marker(B).addTo(map).bindPopup("Куда").openPopup();
     await buildRoute();
   }
 });
 
-async function buildRoute(){
-  if(routeLine) map.removeLayer(routeLine);
+/* ================= BUILD ROUTE ================= */
+async function buildRoute() {
+  if (routeLine) map.removeLayer(routeLine);
 
   const url =
-    "https://hadamat-dy1.vercel.app/api/route"+
+    "https://hadamat-dy1.vercel.app/api/route" +
     `?fromLat=${A.lat}&fromLng=${A.lng}&toLat=${B.lat}&toLng=${B.lng}`;
 
   let data;
-  try{
-    const r=await fetch(url,{ cache:"no-store" });
-    data=await r.json();
-  }catch(e){
-    alert("Proxy недоступен");
+  try {
+    const r = await fetch(url, { cache: "no-store" });
+    data = await r.json();
+  } catch (e) {
+    drawFallback();
     return;
   }
 
-  if(!data.routes?.[0]){
-    alert("Маршрут не найден");
+  /* === FALLBACK от backend === */
+  if (data.fallback) {
+    drawFallback(data.distance);
     return;
   }
 
-  const route=data.routes[0];
-  dist=(route.distance/1000).toFixed(2);
+  /* === НОРМАЛЬНЫЙ OSRM МАРШРУТ === */
+  if (data.routes && data.routes[0]) {
+    const route = data.routes[0];
+    dist = +(route.distance / 1000).toFixed(2);
 
-  routeLine=L.geoJSON(route.geometry,{
-    style:{color:"#2196F3",weight:4}
-  }).addTo(map);
+    routeLine = L.geoJSON(route.geometry, {
+      style: { color:"#2196F3", weight:4 }
+    }).addTo(map);
 
-  btn.disabled=false;
+    btn.disabled = false;
+    return;
+  }
+
+  /* === ЕСЛИ OSRM В РФ НИЧЕГО НЕ ВЕРНУЛ === */
+  drawFallback();
 }
 
-document.getElementById("btnClear").onclick=()=>{
-  if(mA)map.removeLayer(mA);
-  if(mB)map.removeLayer(mB);
-  if(routeLine)map.removeLayer(routeLine);
-  A=B=mA=mB=routeLine=null;
-  btn.disabled=true;
+/* ================= FALLBACK (прямая линия) ================= */
+function drawFallback(forcedDistance = null) {
+  if (routeLine) map.removeLayer(routeLine);
+
+  routeLine = L.polyline(
+    [[A.lat, A.lng], [B.lat, B.lng]],
+    { color:"#2196F3", weight:4, dashArray:"6,6" }
+  ).addTo(map);
+
+  dist = forcedDistance ?? haversine(A.lat, A.lng, B.lat, B.lng);
+  btn.disabled = false;
+}
+
+/* ================= HAVERSINE ================= */
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2-lat1)*Math.PI/180;
+  const dLon = (lon2-lon1)*Math.PI/180;
+
+  const a =
+    Math.sin(dLat/2)**2 +
+    Math.cos(lat1*Math.PI/180) *
+    Math.cos(lat2*Math.PI/180) *
+    Math.sin(dLon/2)**2;
+
+  return +(2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))).toFixed(2);
+}
+
+/* ================= CLEAR ================= */
+document.getElementById("btnClear").onclick = () => {
+  if (mA) map.removeLayer(mA);
+  if (mB) map.removeLayer(mB);
+  if (routeLine) map.removeLayer(routeLine);
+
+  A = B = mA = mB = routeLine = null;
+  btn.disabled = true;
 };
 
-btn.onclick=()=>{
-  tg.sendData(JSON.stringify({from:A,to:B,distance_km:dist}));
+/* ================= SEND ================= */
+btn.onclick = () => {
+  tg.sendData(JSON.stringify({
+    from: A,
+    to: B,
+    distance_km: dist
+  }));
   tg.close();
 };
 </script>
