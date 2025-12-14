@@ -5,50 +5,23 @@
   <title>Заказ такси</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 
-  <!-- Telegram WebApp -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      background: #f2f2f2;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont;
-    }
-
-    #map {
-      height: calc(100% - 90px);
-      width: 100%;
-    }
-
+    html, body { margin:0; padding:0; height:100%; background:#f2f2f2; }
+    #map { height: calc(100% - 90px); }
     .controls {
-      height: 90px;
-      display: flex;
-      gap: 10px;
-      padding: 12px;
-      background: #fff;
-      box-shadow: 0 -4px 12px rgba(0,0,0,0.12);
-      border-radius: 18px 18px 0 0;
+      height:90px; display:flex; gap:10px; padding:12px;
+      background:#fff; box-shadow:0 -4px 12px rgba(0,0,0,.12);
     }
-
-    .btn {
-      flex: 1;
-      border: none;
-      border-radius: 14px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-
-    .btn-location { background: #e3f2fd; color: #0d47a1; }
-    .btn-clear { background: #ffebee; color: #b71c1c; }
-    .btn-order { background: #00c853; color: #fff; }
-    .btn-order:disabled { background: #bdbdbd; }
+    .btn { flex:1; border:none; border-radius:14px; font-weight:600; }
+    .btn-location { background:#e3f2fd; }
+    .btn-clear { background:#ffebee; }
+    .btn-order { background:#00c853; color:#fff; }
+    .btn-order:disabled { background:#bdbdbd; }
   </style>
 </head>
 
@@ -63,112 +36,71 @@
 </div>
 
 <script>
-/* ================= TELEGRAM ================= */
 const tg = window.Telegram.WebApp;
 tg.expand();
 tg.ready();
-tg.MainButton.hide();
 
-/* ================= MAP ================= */
 const map = L.map("map");
-map.locate({ setView: true, maxZoom: 14 });
+map.locate({ setView:true, maxZoom:14 });
+map.on("locationerror",()=>map.setView([55.75,37.61],12));
 
-map.on("locationerror", () => {
-  map.setView([55.751244, 37.618423], 12);
-});
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
 
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  attribution: "© OpenStreetMap"
-}).addTo(map);
+let A=null,B=null, mA=null,mB=null, routeLine=null, dist=0;
+const btn=document.getElementById("orderBtn");
 
-/* ================= STATE ================= */
-let pointA = null;
-let pointB = null;
-let markerA = null;
-let markerB = null;
-let routeLine = null;
-let distanceKm = 0;
-
-const orderBtn = document.getElementById("orderBtn");
-
-/* ================= MAP CLICK ================= */
-map.on("click", async (e) => {
-  if (!pointA) {
-    pointA = e.latlng;
-    markerA = L.marker(pointA).addTo(map).bindPopup("📍 Откуда").openPopup();
-  } else if (!pointB) {
-    pointB = e.latlng;
-    markerB = L.marker(pointB).addTo(map).bindPopup("🏁 Куда").openPopup();
+map.on("click", async e=>{
+  if(!A){
+    A=e.latlng;
+    mA=L.marker(A).addTo(map).bindPopup("Откуда").openPopup();
+  }else if(!B){
+    B=e.latlng;
+    mB=L.marker(B).addTo(map).bindPopup("Куда").openPopup();
     await buildRoute();
   }
 });
 
-/* ================= GEO ================= */
-document.getElementById("btnLocation").onclick = () => {
-  map.locate({ setView: true, maxZoom: 16 });
-  map.once("locationfound", (e) => {
-    clearAll();
-    pointA = e.latlng;
-    markerA = L.marker(pointA).addTo(map).bindPopup("📍 Моё место").openPopup();
-  });
-};
-
-/* ================= BUILD ROUTE (через proxy) ================= */
-async function buildRoute() {
-  if (routeLine) map.removeLayer(routeLine);
+async function buildRoute(){
+  if(routeLine) map.removeLayer(routeLine);
 
   const url =
-    `/api/route?fromLat=${pointA.lat}&fromLng=${pointA.lng}` +
-    `&toLat=${pointB.lat}&toLng=${pointB.lng}`;
+    "https://hadamat-dy1.vercel.app/api/route"+
+    `?fromLat=${A.lat}&fromLng=${A.lng}&toLat=${B.lat}&toLng=${B.lng}`;
 
   let data;
-  try {
-    const res = await fetch(url);
-    data = await res.json();
-  } catch {
-    alert("Ошибка сети");
+  try{
+    const r=await fetch(url,{ cache:"no-store" });
+    data=await r.json();
+  }catch(e){
+    alert("Proxy недоступен");
     return;
   }
 
-  if (!data.routes || !data.routes[0]) {
-    alert("Не удалось построить маршрут");
+  if(!data.routes?.[0]){
+    alert("Маршрут не найден");
     return;
   }
 
-  const route = data.routes[0];
-  distanceKm = +(route.distance / 1000).toFixed(2);
+  const route=data.routes[0];
+  dist=(route.distance/1000).toFixed(2);
 
-  routeLine = L.geoJSON(route.geometry, {
-    style: { color: "#2196F3", weight: 4 }
+  routeLine=L.geoJSON(route.geometry,{
+    style:{color:"#2196F3",weight:4}
   }).addTo(map);
 
-  orderBtn.disabled = false;
+  btn.disabled=false;
 }
 
-/* ================= CLEAR ================= */
-document.getElementById("btnClear").onclick = clearAll;
+document.getElementById("btnClear").onclick=()=>{
+  if(mA)map.removeLayer(mA);
+  if(mB)map.removeLayer(mB);
+  if(routeLine)map.removeLayer(routeLine);
+  A=B=mA=mB=routeLine=null;
+  btn.disabled=true;
+};
 
-function clearAll() {
-  if (markerA) map.removeLayer(markerA);
-  if (markerB) map.removeLayer(markerB);
-  if (routeLine) map.removeLayer(routeLine);
-
-  pointA = null;
-  pointB = null;
-  markerA = null;
-  markerB = null;
-  routeLine = null;
-  distanceKm = 0;
-  orderBtn.disabled = true;
-}
-
-/* ================= SEND ================= */
-orderBtn.onclick = () => {
-  tg.sendData(JSON.stringify({
-    from: pointA,
-    to: pointB,
-    distance_km: distanceKm
-  }));
+btn.onclick=()=>{
+  tg.sendData(JSON.stringify({from:A,to:B,distance_km:dist}));
   tg.close();
 };
 </script>
