@@ -1,24 +1,24 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8" />
-<title>Заказ такси</title>
+<meta charset="UTF-8">
+<title>Taxi</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
 <style>
 html,body{margin:0;height:100%}
 #map{height:calc(100% - 90px)}
-.controls{
-  height:90px;display:flex;gap:10px;padding:12px;
-  background:#fff;box-shadow:0 -4px 12px rgba(0,0,0,.15)
-}
-button{flex:1;border:none;border-radius:14px;font-weight:600}
-.order{background:#00c853;color:#fff}
-.order:disabled{background:#bbb}
+.controls{height:90px;display:flex;gap:10px;padding:12px;background:#fff}
+.btn{flex:1;border-radius:12px;border:none;font-weight:600}
+.btn-order{background:#00c853;color:#fff}
 </style>
 </head>
 
@@ -26,99 +26,53 @@ button{flex:1;border:none;border-radius:14px;font-weight:600}
 
 <div id="map"></div>
 <div class="controls">
-  <button id="loc">📍 Моё место</button>
-  <button id="clear">❌ Очистить</button>
-  <button id="order" class="order" disabled>✅ Заказать</button>
+  <button class="btn" id="clear">❌ Очистить</button>
+  <button class="btn btn-order" id="order" disabled>✅ Заказать</button>
 </div>
 
 <script>
-const ORS_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjY3MTljYjljNTc5ODRkYWE4N2RkMDgwMjk4Mzk4NTdmIiwiaCI6Im11cm11cjY0In0=";
-
-const tg = window.Telegram.WebApp;
+const tg = Telegram.WebApp;
 tg.expand(); tg.ready();
 
-const map = L.map("map");
-map.locate({setView:true,maxZoom:15});
-map.on("locationerror",()=>map.setView([55.75,37.61],13));
+const map = L.map('map').setView([55.75,37.61],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+let points = [];
+let control = null;
 
-let A=null,B=null,mA=null,mB=null,route=null,dist=0;
-const orderBtn=document.getElementById("order");
+map.on('click', e=>{
+  points.push(e.latlng);
 
-/* ---------- ROUTE ---------- */
-async function buildRoute(){
-  if(route) map.removeLayer(route);
+  if(points.length === 2){
+    if(control) map.removeControl(control);
 
-  const body = {
-    coordinates: [
-      [A.lng, A.lat],
-      [B.lng, B.lat]
-    ]
-  };
+    control = L.Routing.control({
+      waypoints: points,
+      addWaypoints: false,
+      draggableWaypoints: false,
+      fitSelectedRoutes: true,
+      router: L.Routing.osrmv1({
+        serviceUrl: 'https://routing.openstreetmap.de/routed-car/' // ❗ НЕ public OSRM
+      }),
+      lineOptions:{
+        styles:[{color:'#1e88e5',weight:5}]
+      }
+    }).addTo(map);
 
-  const r = await fetch(
-    "https://api.openrouteservice.org/v2/directions/driving-car/geojson",
-    {
-      method: "POST",
-      headers: {
-        "Authorization": ORS_KEY,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(body)
-    }
-  );
-
-  const j = await r.json();
-
-  if(!j.features?.[0]){
-    alert("Маршрут не найден");
-    return;
-  }
-
-  route = L.geoJSON(j, {
-    style:{color:"#1e88e5",weight:5}
-  }).addTo(map);
-
-  dist = (j.features[0].properties.summary.distance / 1000).toFixed(2);
-  orderBtn.disabled = false;
-}
-
-/* ---------- MAP CLICK ---------- */
-map.on("click", async e=>{
-  if(!A){
-    A=e.latlng;
-    mA=L.marker(A).addTo(map).bindPopup("Откуда").openPopup();
-  }else if(!B){
-    B=e.latlng;
-    mB=L.marker(B).addTo(map).bindPopup("Куда").openPopup();
-    await buildRoute();
+    document.getElementById('order').disabled = false;
   }
 });
 
-/* ---------- BUTTONS ---------- */
-document.getElementById("loc").onclick=()=>{
-  map.locate({setView:true,maxZoom:16});
-  map.once("locationfound",e=>{
-    reset();
-    A=e.latlng;
-    mA=L.marker(A).addTo(map).bindPopup("Моё место").openPopup();
-  });
+document.getElementById('clear').onclick=()=>{
+  points=[];
+  if(control) map.removeControl(control);
+  document.getElementById('order').disabled = true;
 };
 
-document.getElementById("clear").onclick=reset;
-
-function reset(){
-  if(mA)map.removeLayer(mA);
-  if(mB)map.removeLayer(mB);
-  if(route)map.removeLayer(route);
-  A=B=mA=mB=route=null;
-  orderBtn.disabled=true;
-}
-
-orderBtn.onclick=()=>{
+document.getElementById('order').onclick=()=>{
   tg.sendData(JSON.stringify({
-    from:A,to:B,distance_km:dist
+    from: points[0],
+    to: points[1]
   }));
   tg.close();
 };
