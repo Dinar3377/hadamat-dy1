@@ -63,19 +63,13 @@
 </div>
 
 <script>
-/* ===========================================================
-   TELEGRAM
-=========================================================== */
-const tg = window.Telegram?.WebApp;
-if (tg) {
-  tg.expand();
-  tg.ready();
-  tg.MainButton.hide();
-}
+/* ================= TELEGRAM ================= */
+const tg = window.Telegram.WebApp;
+tg.expand();
+tg.ready();
+tg.MainButton.hide();
 
-/* ===========================================================
-   MAP INIT — ГОРОД КЛИЕНТА
-=========================================================== */
+/* ================= MAP ================= */
 const map = L.map("map");
 map.locate({ setView: true, maxZoom: 14 });
 
@@ -87,9 +81,7 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "© OpenStreetMap"
 }).addTo(map);
 
-/* ===========================================================
-   STATE
-=========================================================== */
+/* ================= STATE ================= */
 let pointA = null;
 let pointB = null;
 let markerA = null;
@@ -99,9 +91,7 @@ let distanceKm = 0;
 
 const orderBtn = document.getElementById("orderBtn");
 
-/* ===========================================================
-   MAP CLICK
-=========================================================== */
+/* ================= MAP CLICK ================= */
 map.on("click", async (e) => {
   if (!pointA) {
     pointA = e.latlng;
@@ -113,9 +103,7 @@ map.on("click", async (e) => {
   }
 });
 
-/* ===========================================================
-   GEOLOCATION
-=========================================================== */
+/* ================= GEO ================= */
 document.getElementById("btnLocation").onclick = () => {
   map.locate({ setView: true, maxZoom: 16 });
   map.once("locationfound", (e) => {
@@ -125,19 +113,22 @@ document.getElementById("btnLocation").onclick = () => {
   });
 };
 
-/* ===========================================================
-   BUILD ROUTE — ЧИСТЫЙ OSRM (БЕЗ ПЛАГИНОВ)
-=========================================================== */
+/* ================= BUILD ROUTE (через proxy) ================= */
 async function buildRoute() {
   if (routeLine) map.removeLayer(routeLine);
 
   const url =
-    `https://router.project-osrm.org/route/v1/driving/` +
-    `${pointA.lng},${pointA.lat};${pointB.lng},${pointB.lat}` +
-    `?overview=full&geometries=geojson`;
+    `/api/route?fromLat=${pointA.lat}&fromLng=${pointA.lng}` +
+    `&toLat=${pointB.lat}&toLng=${pointB.lng}`;
 
-  const res = await fetch(url);
-  const data = await res.json();
+  let data;
+  try {
+    const res = await fetch(url);
+    data = await res.json();
+  } catch {
+    alert("Ошибка сети");
+    return;
+  }
 
   if (!data.routes || !data.routes[0]) {
     alert("Не удалось построить маршрут");
@@ -154,9 +145,7 @@ async function buildRoute() {
   orderBtn.disabled = false;
 }
 
-/* ===========================================================
-   CLEAR
-=========================================================== */
+/* ================= CLEAR ================= */
 document.getElementById("btnClear").onclick = clearAll;
 
 function clearAll() {
@@ -173,17 +162,13 @@ function clearAll() {
   orderBtn.disabled = true;
 }
 
-/* ===========================================================
-   SEND TO BOT
-=========================================================== */
+/* ================= SEND ================= */
 orderBtn.onclick = () => {
-  const payload = {
-    from: { lat: pointA.lat, lng: pointA.lng },
-    to: { lat: pointB.lat, lng: pointB.lng },
+  tg.sendData(JSON.stringify({
+    from: pointA,
+    to: pointB,
     distance_km: distanceKm
-  };
-
-  tg.sendData(JSON.stringify(payload));
+  }));
   tg.close();
 };
 </script>
