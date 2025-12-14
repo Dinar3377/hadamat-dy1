@@ -2,43 +2,33 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <title>Заказ такси</title>
+  <title>Такси</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-
-  <!-- 🔑 ЯНДЕКС КАРТЫ -->
+  <!-- YANDEX MAPS -->
   <script src="https://api-maps.yandex.ru/2.1/?apikey=dc353f10-1df9-4896-9b73-8735276c0348&lang=ru_RU"></script>
 
   <style>
-    html, body {
+    html, body, #map {
       margin: 0;
       padding: 0;
+      width: 100%;
       height: 100%;
     }
-    #map {
-      height: calc(100% - 90px);
-    }
     .controls {
-      height: 90px;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
       display: flex;
       gap: 10px;
-      padding: 12px;
+      padding: 10px;
       background: #fff;
     }
     button {
       flex: 1;
-      border: none;
-      border-radius: 14px;
+      padding: 12px;
       font-size: 16px;
-      font-weight: 600;
-    }
-    .order {
-      background: #00c853;
-      color: #fff;
-    }
-    .order:disabled {
-      background: #bbb;
     }
   </style>
 </head>
@@ -48,81 +38,54 @@
 <div id="map"></div>
 
 <div class="controls">
-  <button id="clear">❌ Очистить</button>
-  <button id="order" class="order" disabled>✅ Заказать</button>
+  <button onclick="clearAll()">❌ Очистить</button>
 </div>
 
 <script>
-const tg = window.Telegram.WebApp;
-tg.expand();
-tg.ready();
+ymaps.ready(init);
 
-let map;
-let pointA = null;
-let pointB = null;
-let route = null;
+let map, route, points = [];
 
-ymaps.ready(() => {
+function init() {
   map = new ymaps.Map("map", {
-    center: [55.75, 37.61],
-    zoom: 13,
-    controls: ["zoomControl"]
+    center: [55.751244, 37.618423],
+    zoom: 13
   });
 
-  map.events.add("click", (e) => {
-    const coords = e.get("coords");
+  map.events.add("click", function (e) {
+    if (points.length >= 2) return;
 
-    if (!pointA) {
-      pointA = new ymaps.Placemark(coords, { balloonContent: "Откуда" });
-      map.geoObjects.add(pointA);
-    } else if (!pointB) {
-      pointB = new ymaps.Placemark(coords, { balloonContent: "Куда" });
-      map.geoObjects.add(pointB);
+    const coords = e.get("coords");
+    points.push(coords);
+
+    map.geoObjects.add(new ymaps.Placemark(coords));
+
+    if (points.length === 2) {
       buildRoute();
     }
   });
-});
+}
 
 function buildRoute() {
-  if (route) map.geoObjects.remove(route);
-
-  route = new ymaps.multiRouter.MultiRoute({
-    referencePoints: [
-      pointA.geometry.getCoordinates(),
-      pointB.geometry.getCoordinates()
-    ],
-    params: {
-      routingMode: "auto"
+  route = new ymaps.multiRouter.MultiRoute(
+    {
+      referencePoints: points,
+      params: {
+        routingMode: "auto"
+      }
+    },
+    {
+      boundsAutoApply: true
     }
-  }, {
-    boundsAutoApply: true
-  });
-
-  route.model.events.add("requestsuccess", () => {
-    document.getElementById("order").disabled = false;
-  });
+  );
 
   map.geoObjects.add(route);
 }
 
-document.getElementById("clear").onclick = () => {
+function clearAll() {
   map.geoObjects.removeAll();
-  pointA = pointB = route = null;
-  document.getElementById("order").disabled = true;
-};
-
-document.getElementById("order").onclick = () => {
-  const distance =
-    route.model.getRoutes()[0].properties.get("distance").value / 1000;
-
-  tg.sendData(JSON.stringify({
-    from: pointA.geometry.getCoordinates(),
-    to: pointB.geometry.getCoordinates(),
-    distance_km: distance.toFixed(2)
-  }));
-
-  tg.close();
-};
+  points = [];
+}
 </script>
 
 </body>
