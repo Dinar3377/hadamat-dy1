@@ -32,6 +32,8 @@ button{flex:1;border:none;border-radius:14px;font-weight:600}
 </div>
 
 <script>
+const ORS_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjY3MTljYjljNTc5ODRkYWE4N2RkMDgwMjk4Mzk4NTdmIiwiaCI6Im11cm11cjY0In0=";
+
 const tg = window.Telegram.WebApp;
 tg.expand(); tg.ready();
 
@@ -44,49 +46,46 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
 let A=null,B=null,mA=null,mB=null,route=null,dist=0;
 const orderBtn=document.getElementById("order");
 
-/* ---------- SNAP TO ROAD ---------- */
-async function snap(lat,lng){
-  const url=`https://router.project-osrm.org/nearest/v1/driving/${lng},${lat}?number=1`;
-  const r=await fetch(url);
-  const j=await r.json();
-  if(!j.waypoints?.[0]) return null;
-  const [slng,slat]=j.waypoints[0].location;
-  return {lat:slat,lng:slng};
-}
-
-/* ---------- BUILD ROUTE ---------- */
+/* ---------- ROUTE ---------- */
 async function buildRoute(){
   if(route) map.removeLayer(route);
 
-  const sA=await snap(A.lat,A.lng);
-  const sB=await snap(B.lat,B.lng);
+  const body = {
+    coordinates: [
+      [A.lng, A.lat],
+      [B.lng, B.lat]
+    ]
+  };
 
-  if(!sA || !sB){
-    alert("Нажмите ближе к дороге");
-    return;
-  }
+  const r = await fetch(
+    "https://api.openrouteservice.org/v2/directions/driving-car/geojson",
+    {
+      method: "POST",
+      headers: {
+        "Authorization": ORS_KEY,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    }
+  );
 
-  const url=`https://router.project-osrm.org/route/v1/driving/`+
-    `${sA.lng},${sA.lat};${sB.lng},${sB.lat}?overview=full&geometries=geojson`;
+  const j = await r.json();
 
-  const r=await fetch(url);
-  const j=await r.json();
-
-  if(!j.routes?.[0]){
+  if(!j.features?.[0]){
     alert("Маршрут не найден");
     return;
   }
 
-  route=L.geoJSON(j.routes[0].geometry,{
+  route = L.geoJSON(j, {
     style:{color:"#1e88e5",weight:5}
   }).addTo(map);
 
-  dist=(j.routes[0].distance/1000).toFixed(2);
-  orderBtn.disabled=false;
+  dist = (j.features[0].properties.summary.distance / 1000).toFixed(2);
+  orderBtn.disabled = false;
 }
 
 /* ---------- MAP CLICK ---------- */
-map.on("click",async e=>{
+map.on("click", async e=>{
   if(!A){
     A=e.latlng;
     mA=L.marker(A).addTo(map).bindPopup("Откуда").openPopup();
