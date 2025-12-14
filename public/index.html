@@ -13,16 +13,35 @@
   <style>
     html, body { margin:0; padding:0; height:100%; background:#f2f2f2; font-family:system-ui; }
     #map { height: calc(100% - 90px); }
-    .controls{height:90px;display:flex;gap:10px;padding:12px;background:#fff;box-shadow:0 -4px 12px rgba(0,0,0,.12);border-radius:18px 18px 0 0}
-    .btn{flex:1;border:none;border-radius:14px;font-size:15px;font-weight:600;cursor:pointer}
-    .btn-location{background:#e3f2fd;color:#0d47a1}
-    .btn-clear{background:#ffebee;color:#b71c1c}
-    .btn-order{background:#00c853;color:#fff}
-    .btn-order:disabled{background:#bdbdbd}
+
+    .controls {
+      height:90px;
+      display:flex;
+      gap:10px;
+      padding:12px;
+      background:#fff;
+      box-shadow:0 -4px 12px rgba(0,0,0,.12);
+      border-radius:18px 18px 0 0;
+    }
+
+    .btn {
+      flex:1;
+      border:none;
+      border-radius:14px;
+      font-size:15px;
+      font-weight:600;
+      cursor:pointer;
+    }
+
+    .btn-location { background:#e3f2fd; color:#0d47a1; }
+    .btn-clear { background:#ffebee; color:#b71c1c; }
+    .btn-order { background:#00c853; color:#fff; }
+    .btn-order:disabled { background:#bdbdbd; }
   </style>
 </head>
 
 <body>
+
 <div id="map"></div>
 
 <div class="controls">
@@ -37,7 +56,6 @@ const tg = window.Telegram?.WebApp;
 if (tg) { tg.expand(); tg.ready(); }
 
 /* ================= CONFIG ================= */
-// Обязательно абсолютный домен (в TG WebApp так надёжнее)
 const API_BASE = "https://hadamat-dy1.vercel.app";
 
 /* ================= MAP ================= */
@@ -50,112 +68,99 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 }).addTo(map);
 
 /* ================= STATE ================= */
-let A = null, B = null;          // уже "прилипшие" точки
+let A = null, B = null;          // координаты (могут быть snapped)
 let mA = null, mB = null;
 let routeLayer = null;
 let distanceKm = 0;
+
 const orderBtn = document.getElementById("orderBtn");
 
-/* ================= HELPERS ================= */
-function setBusy(isBusy) {
-  // чтобы не кликали 10 раз подряд
-  map.getContainer().style.pointerEvents = isBusy ? "none" : "auto";
-  orderBtn.disabled = isBusy || !A || !B;
-}
-
-async function snapToRoad(lat, lng) {
-  const url = `${API_BASE}/api/nearest?lat=${lat}&lng=${lng}`;
-  const r = await fetch(url, { cache: "no-store" });
-  const data = await r.json();
-  if (!data.ok) throw new Error(data.error || "snap failed");
-  return { lat: data.lat, lng: data.lng };
-}
-
-async function buildRoute() {
-  if (routeLayer) {
-    map.removeLayer(routeLayer);
-    routeLayer = null;
+/* ================= SNAP (фон) ================= */
+async function snapInBackground(marker, pointSetter) {
+  try {
+    const { lat, lng } = marker.getLatLng();
+    const r = await fetch(`${API_BASE}/api/nearest?lat=${lat}&lng=${lng}`, { cache:"no-store" });
+    const j = await r.json();
+    if (j.ok) {
+      const snapped = { lat: j.lat, lng: j.lng };
+      marker.setLatLng(snapped);
+      pointSetter(snapped);
+    }
+  } catch (_) {
+    // тихо игнорируем — маркер уже есть
   }
-  orderBtn.disabled = true;
+}
 
-  const url = `${API_BASE}/api/route?fromLat=${A.lat}&fromLng=${A.lng}&toLat=${B.lat}&toLng=${B.lng}`;
-  const r = await fetch(url, { cache: "no-store" });
-  const data = await r.json();
+/* ================= MAP CLICK ================= */
+map.on("click", (e) => {
+  // 1️⃣ первая точка
+  if (!A) {
+    A = e.latlng;
+    mA = L.marker(A).addTo(map).bindPopup("📍 Откуда").openPopup();
 
-  if (!data.ok) {
-    alert(data.error || "Маршрут по дорогам не найден. Выберите точки ближе к дороге.");
+    // в фоне "прилипаем" к дороге
+    snapInBackground(mA, (p) => A = p);
     return;
   }
 
-  distanceKm = data.distance_km;
+  // 2️⃣ вторая точка
+  if (!B) {
+    B = e.latlng;
+    mB = L.marker(B).addTo(map).bindPopup("🏁 Куда").openPopup();
 
-  // geojson LineString
-  routeLayer = L.geoJSON(data.geometry, {
-    style: { color:"#2196F3", weight:4, opacity:0.9 }
-  }).addTo(map);
+    snapInBackground(mB, (p) => B = p);
 
-  orderBtn.disabled = false;
-}
-
-/* ================= CLICK FLOW (SNAP + ROUTE) ================= */
-map.on("click", async (e) => {
-  try {
-    setBusy(true);
-
-    // 1) snap к дороге
-    const snapped = await snapToRoad(e.latlng.lat, e.latlng.lng);
-
-    if (!A) {
-      A = snapped;
-      mA = L.marker(A).addTo(map).bindPopup("📍 Откуда (на дороге)").openPopup();
-      setBusy(false);
-      return;
-    }
-
-    if (!B) {
-      B = snapped;
-      mB = L.marker(B).addTo(map).bindPopup("🏁 Куда (на дороге)").openPopup();
-
-      // 2) строим маршрут ПО ДОРОГАМ
-      await buildRoute();
-      setBusy(false);
-      return;
-    }
-  } catch (err) {
-    setBusy(false);
-    alert("Не удалось привязать точку к дороге. Попробуйте нажать ближе к улице.");
+    // маршрут строим ЧУТЬ ПОЗЖЕ, чтобы snap успел
+    setTimeout(buildRoute, 400);
+    return;
   }
 });
 
-/* ================= МОЁ МЕСТО (SNAP) ================= */
-document.getElementById("btnLocation").onclick = async () => {
-  setBusy(true);
+/* ================= BUILD ROUTE (ПО ДОРОГАМ) ================= */
+async function buildRoute() {
+  if (routeLayer) map.removeLayer(routeLayer);
+  orderBtn.disabled = true;
 
-  map.locate({ setView: true, maxZoom: 16 });
+  const url =
+    `${API_BASE}/api/route?fromLat=${A.lat}&fromLng=${A.lng}` +
+    `&toLat=${B.lat}&toLng=${B.lng}`;
 
-  map.once("locationfound", async (e) => {
-    try {
-      clearAll(false);
-      const snapped = await snapToRoad(e.latlng.lat, e.latlng.lng);
-      A = snapped;
-      mA = L.marker(A).addTo(map).bindPopup("📍 Моё место (на дороге)").openPopup();
-    } catch {
-      alert("Не удалось определить дорогу рядом. Нажмите на улицу вручную.");
-    } finally {
-      setBusy(false);
+  try {
+    const r = await fetch(url, { cache:"no-store" });
+    const data = await r.json();
+
+    if (!data.ok) {
+      alert(data.error || "Маршрут по дорогам не найден. Выберите точки ближе к улице.");
+      return;
     }
-  });
 
-  map.once("locationerror", () => {
-    setBusy(false);
-    alert("Не удалось получить геолокацию");
+    distanceKm = data.distance_km;
+
+    routeLayer = L.geoJSON(data.geometry, {
+      style: { color:"#2196F3", weight:4 }
+    }).addTo(map);
+
+    orderBtn.disabled = false;
+  } catch {
+    alert("Ошибка построения маршрута");
+  }
+}
+
+/* ================= МОЁ МЕСТО ================= */
+document.getElementById("btnLocation").onclick = () => {
+  map.locate({ setView:true, maxZoom:16 });
+  map.once("locationfound", (e) => {
+    clearAll();
+    A = e.latlng;
+    mA = L.marker(A).addTo(map).bindPopup("📍 Моё место").openPopup();
+    snapInBackground(mA, (p) => A = p);
   });
 };
 
 /* ================= CLEAR ================= */
-document.getElementById("btnClear").onclick = () => clearAll(true);
+document.getElementById("btnClear").onclick = clearAll;
 
-function clearAll(showDisable = true) {
+function clearAll() {
   if (mA) map.removeLayer(mA);
   if (mB) map.removeLayer(mB);
   if (routeLayer) map.removeLayer(routeLayer);
@@ -164,22 +169,19 @@ function clearAll(showDisable = true) {
   mA = mB = null;
   routeLayer = null;
   distanceKm = 0;
-
-  if (showDisable) orderBtn.disabled = true;
+  orderBtn.disabled = true;
 }
 
 /* ================= SEND ================= */
 orderBtn.onclick = () => {
-  if (!A || !B) return;
-  const payload = {
-    from: { lat: A.lat, lng: A.lng },
-    to:   { lat: B.lat, lng: B.lng },
+  tg?.sendData(JSON.stringify({
+    from: A,
+    to: B,
     distance_km: distanceKm
-  };
-
-  tg?.sendData(JSON.stringify(payload));
+  }));
   tg?.close();
 };
 </script>
+
 </body>
 </html>
