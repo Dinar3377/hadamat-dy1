@@ -5,13 +5,19 @@
   <title>Заказ такси</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 
+  <!-- Telegram WebApp -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
+  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+  <!-- Leaflet Routing Machine -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
+  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
   <style>
-    html, body { margin:0; padding:0; height:100%; background:#f2f2f2; font-family:system-ui; }
+    html, body { margin:0; padding:0; height:100%; background:#f2f2f2; }
     #map { height: calc(100% - 90px); }
 
     .controls {
@@ -21,20 +27,18 @@
       padding:12px;
       background:#fff;
       box-shadow:0 -4px 12px rgba(0,0,0,.12);
-      border-radius:18px 18px 0 0;
     }
 
     .btn {
       flex:1;
       border:none;
       border-radius:14px;
-      font-size:15px;
       font-weight:600;
       cursor:pointer;
     }
 
-    .btn-location { background:#e3f2fd; color:#0d47a1; }
-    .btn-clear { background:#ffebee; color:#b71c1c; }
+    .btn-location { background:#e3f2fd; }
+    .btn-clear { background:#ffebee; }
     .btn-order { background:#00c853; color:#fff; }
     .btn-order:disabled { background:#bdbdbd; }
   </style>
@@ -53,107 +57,81 @@
 <script>
 /* ================= TELEGRAM ================= */
 const tg = window.Telegram?.WebApp;
-if (tg) { tg.expand(); tg.ready(); }
-
-/* ================= CONFIG ================= */
-const API_BASE = "https://hadamat-dy1.vercel.app";
+if (tg) {
+  tg.expand();
+  tg.ready();
+}
 
 /* ================= MAP ================= */
-const map = L.map("map");
-map.locate({ setView:true, maxZoom:15 });
-map.on("locationerror", () => map.setView([55.75, 37.61], 12));
+const map = L.map("map").setView([55.75, 37.61], 13);
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "© OpenStreetMap"
 }).addTo(map);
 
-/* ================= STATE ================= */
-let A = null, B = null;          // координаты (могут быть snapped)
-let mA = null, mB = null;
-let routeLayer = null;
+/* ================= ROUTING ================= */
+let control = null;
+let pointA = null;
+let pointB = null;
 let distanceKm = 0;
 
 const orderBtn = document.getElementById("orderBtn");
 
-/* ================= SNAP (фон) ================= */
-async function snapInBackground(marker, pointSetter) {
-  try {
-    const { lat, lng } = marker.getLatLng();
-    const r = await fetch(`${API_BASE}/api/nearest?lat=${lat}&lng=${lng}`, { cache:"no-store" });
-    const j = await r.json();
-    if (j.ok) {
-      const snapped = { lat: j.lat, lng: j.lng };
-      marker.setLatLng(snapped);
-      pointSetter(snapped);
-    }
-  } catch (_) {
-    // тихо игнорируем — маркер уже есть
+function buildRoute() {
+  if (control) {
+    map.removeControl(control);
+    control = null;
   }
+
+  control = L.Routing.control({
+    waypoints: [
+      L.latLng(pointA.lat, pointA.lng),
+      L.latLng(pointB.lat, pointB.lng)
+    ],
+    router: L.Routing.osrmv1({
+      serviceUrl: "https://router.project-osrm.org/route/v1"
+    }),
+    addWaypoints: false,
+    draggableWaypoints: false,
+    fitSelectedRoutes: true,
+    show: false,
+    createMarker: () => null,
+    lineOptions: {
+      styles: [{ color: "#2196F3", weight: 4 }]
+    }
+  })
+  .on("routesfound", e => {
+    distanceKm = +(e.routes[0].summary.totalDistance / 1000).toFixed(2);
+    orderBtn.disabled = false;
+  })
+  .on("routingerror", () => {
+    alert("Маршрут по дороге не найден. Нажмите ближе к улице.");
+  })
+  .addTo(map);
 }
 
-/* ================= MAP CLICK ================= */
-map.on("click", (e) => {
-  // 1️⃣ первая точка
-  if (!A) {
-    A = e.latlng;
-    mA = L.marker(A).addTo(map).bindPopup("📍 Откуда").openPopup();
-
-    // в фоне "прилипаем" к дороге
-    snapInBackground(mA, (p) => A = p);
+/* ================= CLICK ================= */
+map.on("click", e => {
+  if (!pointA) {
+    pointA = e.latlng;
+    L.marker(pointA).addTo(map).bindPopup("Откуда").openPopup();
     return;
   }
 
-  // 2️⃣ вторая точка
-  if (!B) {
-    B = e.latlng;
-    mB = L.marker(B).addTo(map).bindPopup("🏁 Куда").openPopup();
-
-    snapInBackground(mB, (p) => B = p);
-
-    // маршрут строим ЧУТЬ ПОЗЖЕ, чтобы snap успел
-    setTimeout(buildRoute, 400);
-    return;
+  if (!pointB) {
+    pointB = e.latlng;
+    L.marker(pointB).addTo(map).bindPopup("Куда").openPopup();
+    buildRoute();
   }
 });
-
-/* ================= BUILD ROUTE (ПО ДОРОГАМ) ================= */
-async function buildRoute() {
-  if (routeLayer) map.removeLayer(routeLayer);
-  orderBtn.disabled = true;
-
-  const url =
-    `${API_BASE}/api/route?fromLat=${A.lat}&fromLng=${A.lng}` +
-    `&toLat=${B.lat}&toLng=${B.lng}`;
-
-  try {
-    const r = await fetch(url, { cache:"no-store" });
-    const data = await r.json();
-
-    if (!data.ok) {
-      alert(data.error || "Маршрут по дорогам не найден. Выберите точки ближе к улице.");
-      return;
-    }
-
-    distanceKm = data.distance_km;
-
-    routeLayer = L.geoJSON(data.geometry, {
-      style: { color:"#2196F3", weight:4 }
-    }).addTo(map);
-
-    orderBtn.disabled = false;
-  } catch {
-    alert("Ошибка построения маршрута");
-  }
-}
 
 /* ================= МОЁ МЕСТО ================= */
 document.getElementById("btnLocation").onclick = () => {
   map.locate({ setView:true, maxZoom:16 });
-  map.once("locationfound", (e) => {
+  map.once("locationfound", e => {
     clearAll();
-    A = e.latlng;
-    mA = L.marker(A).addTo(map).bindPopup("📍 Моё место").openPopup();
-    snapInBackground(mA, (p) => A = p);
+    pointA = e.latlng;
+    L.marker(pointA).addTo(map).bindPopup("Моё место").openPopup();
   });
 };
 
@@ -161,13 +139,13 @@ document.getElementById("btnLocation").onclick = () => {
 document.getElementById("btnClear").onclick = clearAll;
 
 function clearAll() {
-  if (mA) map.removeLayer(mA);
-  if (mB) map.removeLayer(mB);
-  if (routeLayer) map.removeLayer(routeLayer);
+  if (control) map.removeControl(control);
+  map.eachLayer(l => {
+    if (l instanceof L.Marker) map.removeLayer(l);
+  });
 
-  A = B = null;
-  mA = mB = null;
-  routeLayer = null;
+  pointA = null;
+  pointB = null;
   distanceKm = 0;
   orderBtn.disabled = true;
 }
@@ -175,8 +153,8 @@ function clearAll() {
 /* ================= SEND ================= */
 orderBtn.onclick = () => {
   tg?.sendData(JSON.stringify({
-    from: A,
-    to: B,
+    from: pointA,
+    to: pointB,
     distance_km: distanceKm
   }));
   tg?.close();
