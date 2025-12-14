@@ -12,17 +12,13 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <!-- Leaflet Routing -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
-  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
-
   <style>
     html, body {
       margin: 0;
       padding: 0;
       height: 100%;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont;
       background: #f2f2f2;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont;
     }
 
     #map {
@@ -78,14 +74,13 @@ if (tg) {
 }
 
 /* ===========================================================
-   MAP INIT — ЦЕНТР = ГОРОД КЛИЕНТА
+   MAP INIT — ГОРОД КЛИЕНТА
 =========================================================== */
 const map = L.map("map");
-
 map.locate({ setView: true, maxZoom: 14 });
 
 map.on("locationerror", () => {
-  map.setView([55.751244, 37.618423], 12); // fallback
+  map.setView([55.751244, 37.618423], 12);
 });
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -99,7 +94,7 @@ let pointA = null;
 let pointB = null;
 let markerA = null;
 let markerB = null;
-let routeControl = null;
+let routeLine = null;
 let distanceKm = 0;
 
 const orderBtn = document.getElementById("orderBtn");
@@ -107,71 +102,56 @@ const orderBtn = document.getElementById("orderBtn");
 /* ===========================================================
    MAP CLICK
 =========================================================== */
-map.on("click", (e) => {
+map.on("click", async (e) => {
   if (!pointA) {
     pointA = e.latlng;
-    markerA = L.marker(pointA).addTo(map)
-      .bindPopup("📍 Откуда")
-      .openPopup();
+    markerA = L.marker(pointA).addTo(map).bindPopup("📍 Откуда").openPopup();
   } else if (!pointB) {
     pointB = e.latlng;
-    markerB = L.marker(pointB).addTo(map)
-      .bindPopup("🏁 Куда")
-      .openPopup();
-    buildRoute();
+    markerB = L.marker(pointB).addTo(map).bindPopup("🏁 Куда").openPopup();
+    await buildRoute();
   }
 });
 
 /* ===========================================================
-   GEOLOCATION BUTTON
+   GEOLOCATION
 =========================================================== */
 document.getElementById("btnLocation").onclick = () => {
   map.locate({ setView: true, maxZoom: 16 });
   map.once("locationfound", (e) => {
     clearAll();
     pointA = e.latlng;
-    markerA = L.marker(pointA).addTo(map)
-      .bindPopup("📍 Моё место")
-      .openPopup();
+    markerA = L.marker(pointA).addTo(map).bindPopup("📍 Моё место").openPopup();
   });
 };
 
 /* ===========================================================
-   BUILD ROUTE — ОСНОВНОЕ ИСПРАВЛЕНИЕ
+   BUILD ROUTE — ЧИСТЫЙ OSRM (БЕЗ ПЛАГИНОВ)
 =========================================================== */
-function buildRoute() {
-  if (routeControl) map.removeControl(routeControl);
+async function buildRoute() {
+  if (routeLine) map.removeLayer(routeLine);
 
-  routeControl = L.Routing.control({
-    waypoints: [
-      L.latLng(pointA.lat, pointA.lng),
-      L.latLng(pointB.lat, pointB.lng)
-    ],
-    router: L.Routing.osrmv1({
-      serviceUrl: "https://router.project-osrm.org",
-      profile: "car"
-    }),
-    addWaypoints: false,
-    draggableWaypoints: false,
-    routeWhileDragging: false,
-    show: false,
-    createMarker: () => null,
-    lineOptions: {
-      styles: [{ color: "#2196F3", weight: 4 }]
-    }
-  });
+  const url =
+    `https://router.project-osrm.org/route/v1/driving/` +
+    `${pointA.lng},${pointA.lat};${pointB.lng},${pointB.lat}` +
+    `?overview=full&geometries=geojson`;
 
-  routeControl.on("routesfound", (e) => {
-    distanceKm = +(e.routes[0].summary.totalDistance / 1000).toFixed(2);
-    orderBtn.disabled = false;
-  });
+  const res = await fetch(url);
+  const data = await res.json();
 
-  routeControl.on("routingerror", (e) => {
-    console.error("OSRM ERROR:", e);
+  if (!data.routes || !data.routes[0]) {
     alert("Не удалось построить маршрут");
-  });
+    return;
+  }
 
-  routeControl.addTo(map);
+  const route = data.routes[0];
+  distanceKm = +(route.distance / 1000).toFixed(2);
+
+  routeLine = L.geoJSON(route.geometry, {
+    style: { color: "#2196F3", weight: 4 }
+  }).addTo(map);
+
+  orderBtn.disabled = false;
 }
 
 /* ===========================================================
@@ -182,15 +162,14 @@ document.getElementById("btnClear").onclick = clearAll;
 function clearAll() {
   if (markerA) map.removeLayer(markerA);
   if (markerB) map.removeLayer(markerB);
-  if (routeControl) map.removeControl(routeControl);
+  if (routeLine) map.removeLayer(routeLine);
 
   pointA = null;
   pointB = null;
   markerA = null;
   markerB = null;
-  routeControl = null;
+  routeLine = null;
   distanceKm = 0;
-
   orderBtn.disabled = true;
 }
 
@@ -198,8 +177,6 @@ function clearAll() {
    SEND TO BOT
 =========================================================== */
 orderBtn.onclick = () => {
-  if (!pointA || !pointB) return;
-
   const payload = {
     from: { lat: pointA.lat, lng: pointA.lng },
     to: { lat: pointB.lat, lng: pointB.lng },
