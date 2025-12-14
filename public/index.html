@@ -58,7 +58,6 @@
 
     .btn-order:disabled {
       background: #bdbdbd;
-      color: #fff;
     }
   </style>
 </head>
@@ -75,21 +74,25 @@
 
 <script>
 /* ===========================================================
-   TELEGRAM WEBAPP
+   TELEGRAM
 =========================================================== */
 const tg = window.Telegram?.WebApp;
-
 if (tg) {
   tg.expand();
   tg.ready();
+  tg.MainButton.hide();
 }
 
 /* ===========================================================
-   MAP INIT
+   MAP INIT (центр = город клиента)
 =========================================================== */
-// ⚠️ ВАЖНО: не (0,0)
-const CENTER = [55.4842, 54.8526];
-const map = L.map("map").setView(CENTER, 13);
+const map = L.map("map");
+
+map.locate({ setView: true, maxZoom: 14 });
+
+map.on("locationerror", () => {
+  map.setView([55.751244, 37.618423], 12); // fallback
+});
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "© OpenStreetMap"
@@ -103,9 +106,28 @@ let pointB = null;
 let markerA = null;
 let markerB = null;
 let routeControl = null;
+let fallbackLine = null;
 let distanceKm = 0;
 
 const orderBtn = document.getElementById("orderBtn");
+
+/* ===========================================================
+   DISTANCE (fallback)
+=========================================================== */
+function calcDistanceKm(a, b) {
+  const R = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLng = (b.lng - a.lng) * Math.PI / 180;
+  const lat1 = a.lat * Math.PI / 180;
+  const lat2 = b.lat * Math.PI / 180;
+
+  const x =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) *
+    Math.sin(dLng / 2) ** 2;
+
+  return +(2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x))).toFixed(2);
+}
 
 /* ===========================================================
    MAP CLICK
@@ -113,43 +135,31 @@ const orderBtn = document.getElementById("orderBtn");
 map.on("click", (e) => {
   if (!pointA) {
     pointA = e.latlng;
-    markerA = L.marker(pointA).addTo(map)
-      .bindPopup("📍 Откуда")
-      .openPopup();
+    markerA = L.marker(pointA).addTo(map).bindPopup("📍 Откуда").openPopup();
   } else if (!pointB) {
     pointB = e.latlng;
-    markerB = L.marker(pointB).addTo(map)
-      .bindPopup("🏁 Куда")
-      .openPopup();
+    markerB = L.marker(pointB).addTo(map).bindPopup("🏁 Куда").openPopup();
     buildRoute();
   }
 });
 
 /* ===========================================================
-   GEOLOCATION
+   GEOLOCATION BUTTON
 =========================================================== */
 document.getElementById("btnLocation").onclick = () => {
   map.locate({ setView: true, maxZoom: 16 });
-
   map.once("locationfound", (e) => {
-    clearPoints();
+    clearAll();
     pointA = e.latlng;
-    markerA = L.marker(pointA)
-      .addTo(map)
-      .bindPopup("📍 Моё местоположение")
-      .openPopup();
-  });
-
-  map.once("locationerror", () => {
-    alert("Не удалось получить геолокацию");
+    markerA = L.marker(pointA).addTo(map).bindPopup("📍 Моё место").openPopup();
   });
 };
 
 /* ===========================================================
-   BUILD ROUTE — OSRM
+   BUILD ROUTE (OSRM + fallback)
 =========================================================== */
 function buildRoute() {
-  if (routeControl) map.removeControl(routeControl);
+  clearRoute();
 
   routeControl = L.Routing.control({
     waypoints: [
@@ -157,27 +167,27 @@ function buildRoute() {
       L.latLng(pointB.lat, pointB.lng)
     ],
     router: L.Routing.osrmv1({
-      serviceUrl: "https://router.project-osrm.org/route/v1"
+      serviceUrl: "https://router.project-osrm.org/route/v1/car"
     }),
     addWaypoints: false,
     draggableWaypoints: false,
-    routeWhileDragging: false,
     show: false,
-    createMarker: () => null,
-    lineOptions: {
-      styles: [{ color: "#2196F3", weight: 4, opacity: 0.85 }]
-    }
+    createMarker: () => null
   });
 
   routeControl.on("routesfound", (e) => {
-    if (e.routes && e.routes[0]) {
-      distanceKm = +(e.routes[0].summary.totalDistance / 1000).toFixed(2);
-      orderBtn.disabled = false;
-    }
+    distanceKm = +(e.routes[0].summary.totalDistance / 1000).toFixed(2);
+    orderBtn.disabled = false;
   });
 
   routeControl.on("routingerror", () => {
-    alert("Не удалось построить маршрут");
+    // fallback
+    distanceKm = calcDistanceKm(pointA, pointB);
+    fallbackLine = L.polyline([pointA, pointB], {
+      color: "#2196F3",
+      weight: 4
+    }).addTo(map);
+    orderBtn.disabled = false;
   });
 
   routeControl.addTo(map);
@@ -186,20 +196,25 @@ function buildRoute() {
 /* ===========================================================
    CLEAR
 =========================================================== */
-document.getElementById("btnClear").onclick = clearPoints;
+document.getElementById("btnClear").onclick = clearAll;
 
-function clearPoints() {
+function clearRoute() {
+  if (routeControl) map.removeControl(routeControl);
+  if (fallbackLine) map.removeLayer(fallbackLine);
+  routeControl = null;
+  fallbackLine = null;
+}
+
+function clearAll() {
   if (markerA) map.removeLayer(markerA);
   if (markerB) map.removeLayer(markerB);
-  if (routeControl) map.removeControl(routeControl);
+  clearRoute();
 
   pointA = null;
   pointB = null;
   markerA = null;
   markerB = null;
-  routeControl = null;
   distanceKm = 0;
-
   orderBtn.disabled = true;
 }
 
