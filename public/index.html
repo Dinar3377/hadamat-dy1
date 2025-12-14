@@ -17,25 +17,35 @@ html, body {
   padding: 0;
   height: 100%;
 }
+
 #map {
-  height: calc(100% - 90px);
+  height: calc(100% - 110px);
 }
+
 .controls {
-  height: 90px;
+  height: 110px;
   display: flex;
   gap: 10px;
-  padding: 12px;
+  padding: 10px;
   background: #fff;
 }
+
 button {
   flex: 1;
-  font-size: 16px;
+  font-size: 15px;
   border-radius: 12px;
   border: none;
+  cursor: pointer;
 }
-.order { background: #00c853; color: #fff; }
-.clear { background: #ffebee; }
-.order:disabled { background: #aaa; }
+
+.locate { background: #e3f2fd; }
+.clear  { background: #ffebee; }
+.order  { background: #00c853; color: #fff; }
+
+.order:disabled {
+  background: #aaa;
+  cursor: not-allowed;
+}
 </style>
 </head>
 
@@ -44,6 +54,7 @@ button {
 <div id="map"></div>
 
 <div class="controls">
+  <button class="locate" id="locateBtn">📍 Моё место</button>
   <button class="clear" id="clearBtn">❌ Очистить</button>
   <button class="order" id="orderBtn" disabled>✅ Заказать</button>
 </div>
@@ -55,35 +66,44 @@ tg.ready();
 
 ymaps.ready(init);
 
-let map, pointA = null, pointB = null, route = null;
+let map;
+let pointA = null;
+let pointB = null;
+let route = null;
 
 function init() {
   map = new ymaps.Map("map", {
-    center: [55.751244, 37.618423], // Москва по умолчанию
+    center: [55.751244, 37.618423], // Москва
     zoom: 13
   });
 
-  // Геолокация
-  ymaps.geolocation.get({
-    provider: 'auto',
-    mapStateAutoApply: true
-  });
-
-  map.events.add('click', async function (e) {
+  // Клик по карте
+  map.events.add('click', function (e) {
     const coords = e.get('coords');
 
     if (!pointA) {
-      pointA = new ymaps.Placemark(coords, { balloonContent: "Откуда" });
-      map.geoObjects.add(pointA);
-    }
-    else if (!pointB) {
-      pointB = new ymaps.Placemark(coords, { balloonContent: "Куда" });
-      map.geoObjects.add(pointB);
+      setPointA(coords);
+    } else if (!pointB) {
+      setPointB(coords);
       buildRoute();
     }
   });
 }
 
+// ---------- ТОЧКИ ----------
+function setPointA(coords) {
+  if (pointA) map.geoObjects.remove(pointA);
+  pointA = new ymaps.Placemark(coords, { balloonContent: "Откуда" }, { preset: "islands#greenIcon" });
+  map.geoObjects.add(pointA);
+}
+
+function setPointB(coords) {
+  if (pointB) map.geoObjects.remove(pointB);
+  pointB = new ymaps.Placemark(coords, { balloonContent: "Куда" }, { preset: "islands#blueIcon" });
+  map.geoObjects.add(pointB);
+}
+
+// ---------- МАРШРУТ ----------
 function buildRoute() {
   if (route) map.geoObjects.remove(route);
 
@@ -91,29 +111,46 @@ function buildRoute() {
     pointA.geometry.getCoordinates(),
     pointB.geometry.getCoordinates()
   ], {
-    mapStateAutoApply: true
+    routingMode: "auto"
   }).then(function (r) {
     route = r;
     map.geoObjects.add(route);
     document.getElementById("orderBtn").disabled = false;
   }, function () {
-    alert("Маршрут не найден. Попробуйте выбрать точки ближе к дороге.");
+    alert("❌ Маршрут не найден. Выберите точки ближе к дороге.");
   });
 }
 
+// ---------- КНОПКИ ----------
+
+// 📍 Моё местоположение
+document.getElementById("locateBtn").onclick = () => {
+  ymaps.geolocation.get({
+    provider: 'auto'
+  }).then(res => {
+    const coords = res.geoObjects.get(0).geometry.getCoordinates();
+    map.setCenter(coords, 16);
+    setPointA(coords);
+  }, () => {
+    alert("❌ Не удалось получить геолокацию");
+  });
+};
+
+// ❌ Очистить
 document.getElementById("clearBtn").onclick = () => {
   map.geoObjects.removeAll();
   pointA = pointB = route = null;
   document.getElementById("orderBtn").disabled = true;
 };
 
+// ✅ Заказать
 document.getElementById("orderBtn").onclick = () => {
-  const length = route.getLength() / 1000;
+  const distanceKm = (route.getLength() / 1000).toFixed(2);
 
   tg.sendData(JSON.stringify({
     from: pointA.geometry.getCoordinates(),
     to: pointB.geometry.getCoordinates(),
-    distance_km: length.toFixed(2)
+    distance_km: distanceKm
   }));
 
   tg.close();
