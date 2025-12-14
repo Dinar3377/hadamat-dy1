@@ -5,55 +5,24 @@
   <title>Заказ такси</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 
-  <!-- Telegram WebApp -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      background: #f2f2f2;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont;
-    }
-
-    #map {
-      height: calc(100% - 90px);
-      width: 100%;
-    }
-
-    .controls {
-      height: 90px;
-      display: flex;
-      gap: 10px;
-      padding: 12px;
-      background: #fff;
-      box-shadow: 0 -4px 12px rgba(0,0,0,0.12);
-      border-radius: 18px 18px 0 0;
-    }
-
-    .btn {
-      flex: 1;
-      border: none;
-      border-radius: 14px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-
-    .btn-location { background: #e3f2fd; color: #0d47a1; }
-    .btn-clear { background: #ffebee; color: #b71c1c; }
-    .btn-order { background: #00c853; color: #fff; }
-    .btn-order:disabled { background: #bdbdbd; }
+    html, body { margin:0; padding:0; height:100%; background:#f2f2f2; font-family:system-ui; }
+    #map { height: calc(100% - 90px); }
+    .controls{height:90px;display:flex;gap:10px;padding:12px;background:#fff;box-shadow:0 -4px 12px rgba(0,0,0,.12);border-radius:18px 18px 0 0}
+    .btn{flex:1;border:none;border-radius:14px;font-size:15px;font-weight:600;cursor:pointer}
+    .btn-location{background:#e3f2fd;color:#0d47a1}
+    .btn-clear{background:#ffebee;color:#b71c1c}
+    .btn-order{background:#00c853;color:#fff}
+    .btn-order:disabled{background:#bdbdbd}
   </style>
 </head>
 
 <body>
-
 <div id="map"></div>
 
 <div class="controls">
@@ -64,132 +33,153 @@
 
 <script>
 /* ================= TELEGRAM ================= */
-const tg = window.Telegram.WebApp;
-tg.expand();
-tg.ready();
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.expand(); tg.ready(); }
+
+/* ================= CONFIG ================= */
+// Обязательно абсолютный домен (в TG WebApp так надёжнее)
+const API_BASE = "https://hadamat-dy1.vercel.app";
 
 /* ================= MAP ================= */
 const map = L.map("map");
-map.locate({ setView: true, maxZoom: 15 });
-
-map.on("locationerror", () => {
-  // fallback если геолокация не дала
-  map.setView([55.75, 37.61], 12);
-});
+map.locate({ setView:true, maxZoom:15 });
+map.on("locationerror", () => map.setView([55.75, 37.61], 12));
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "© OpenStreetMap"
 }).addTo(map);
 
 /* ================= STATE ================= */
-let pointA = null;
-let pointB = null;
-let markerA = null;
-let markerB = null;
-let routeLine = null;
+let A = null, B = null;          // уже "прилипшие" точки
+let mA = null, mB = null;
+let routeLayer = null;
 let distanceKm = 0;
-
 const orderBtn = document.getElementById("orderBtn");
 
-/* ================= MAP CLICK ================= */
-map.on("click", (e) => {
-  if (!pointA) {
-    pointA = e.latlng;
-    markerA = L.marker(pointA).addTo(map)
-      .bindPopup("📍 Откуда")
-      .openPopup();
-  } else if (!pointB) {
-    pointB = e.latlng;
-    markerB = L.marker(pointB).addTo(map)
-      .bindPopup("🏁 Куда")
-      .openPopup();
+/* ================= HELPERS ================= */
+function setBusy(isBusy) {
+  // чтобы не кликали 10 раз подряд
+  map.getContainer().style.pointerEvents = isBusy ? "none" : "auto";
+  orderBtn.disabled = isBusy || !A || !B;
+}
 
-    buildRoute(); // 🔥 ВСЕГДА строим
+async function snapToRoad(lat, lng) {
+  const url = `${API_BASE}/api/nearest?lat=${lat}&lng=${lng}`;
+  const r = await fetch(url, { cache: "no-store" });
+  const data = await r.json();
+  if (!data.ok) throw new Error(data.error || "snap failed");
+  return { lat: data.lat, lng: data.lng };
+}
+
+async function buildRoute() {
+  if (routeLayer) {
+    map.removeLayer(routeLayer);
+    routeLayer = null;
   }
-});
+  orderBtn.disabled = true;
 
-/* ================= МОЁ МЕСТО ================= */
-document.getElementById("btnLocation").onclick = () => {
-  map.locate({ setView: true, maxZoom: 16 });
-  map.once("locationfound", (e) => {
-    clearAll();
-    pointA = e.latlng;
-    markerA = L.marker(pointA).addTo(map)
-      .bindPopup("📍 Моё место")
-      .openPopup();
-  });
-};
+  const url = `${API_BASE}/api/route?fromLat=${A.lat}&fromLng=${A.lng}&toLat=${B.lat}&toLng=${B.lng}`;
+  const r = await fetch(url, { cache: "no-store" });
+  const data = await r.json();
 
-/* ================= BUILD ROUTE (100%) ================= */
-function buildRoute() {
-  if (routeLine) map.removeLayer(routeLine);
+  if (!data.ok) {
+    alert(data.error || "Маршрут по дорогам не найден. Выберите точки ближе к дороге.");
+    return;
+  }
 
-  // 🔵 ВСЕГДА рисуем линию
-  routeLine = L.polyline(
-    [
-      [pointA.lat, pointA.lng],
-      [pointB.lat, pointB.lng]
-    ],
-    {
-      color: "#2196F3",
-      weight: 4
-    }
-  ).addTo(map);
+  distanceKm = data.distance_km;
 
-  // 📏 расстояние по прямой
-  distanceKm = haversine(
-    pointA.lat, pointA.lng,
-    pointB.lat, pointB.lng
-  );
+  // geojson LineString
+  routeLayer = L.geoJSON(data.geometry, {
+    style: { color:"#2196F3", weight:4, opacity:0.9 }
+  }).addTo(map);
 
   orderBtn.disabled = false;
 }
 
+/* ================= CLICK FLOW (SNAP + ROUTE) ================= */
+map.on("click", async (e) => {
+  try {
+    setBusy(true);
+
+    // 1) snap к дороге
+    const snapped = await snapToRoad(e.latlng.lat, e.latlng.lng);
+
+    if (!A) {
+      A = snapped;
+      mA = L.marker(A).addTo(map).bindPopup("📍 Откуда (на дороге)").openPopup();
+      setBusy(false);
+      return;
+    }
+
+    if (!B) {
+      B = snapped;
+      mB = L.marker(B).addTo(map).bindPopup("🏁 Куда (на дороге)").openPopup();
+
+      // 2) строим маршрут ПО ДОРОГАМ
+      await buildRoute();
+      setBusy(false);
+      return;
+    }
+  } catch (err) {
+    setBusy(false);
+    alert("Не удалось привязать точку к дороге. Попробуйте нажать ближе к улице.");
+  }
+});
+
+/* ================= МОЁ МЕСТО (SNAP) ================= */
+document.getElementById("btnLocation").onclick = async () => {
+  setBusy(true);
+
+  map.locate({ setView: true, maxZoom: 16 });
+
+  map.once("locationfound", async (e) => {
+    try {
+      clearAll(false);
+      const snapped = await snapToRoad(e.latlng.lat, e.latlng.lng);
+      A = snapped;
+      mA = L.marker(A).addTo(map).bindPopup("📍 Моё место (на дороге)").openPopup();
+    } catch {
+      alert("Не удалось определить дорогу рядом. Нажмите на улицу вручную.");
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  map.once("locationerror", () => {
+    setBusy(false);
+    alert("Не удалось получить геолокацию");
+  });
+};
+
 /* ================= CLEAR ================= */
-document.getElementById("btnClear").onclick = clearAll;
+document.getElementById("btnClear").onclick = () => clearAll(true);
 
-function clearAll() {
-  if (markerA) map.removeLayer(markerA);
-  if (markerB) map.removeLayer(markerB);
-  if (routeLine) map.removeLayer(routeLine);
+function clearAll(showDisable = true) {
+  if (mA) map.removeLayer(mA);
+  if (mB) map.removeLayer(mB);
+  if (routeLayer) map.removeLayer(routeLayer);
 
-  pointA = null;
-  pointB = null;
-  markerA = null;
-  markerB = null;
-  routeLine = null;
+  A = B = null;
+  mA = mB = null;
+  routeLayer = null;
   distanceKm = 0;
 
-  orderBtn.disabled = true;
+  if (showDisable) orderBtn.disabled = true;
 }
 
-/* ================= SEND TO BOT ================= */
+/* ================= SEND ================= */
 orderBtn.onclick = () => {
+  if (!A || !B) return;
   const payload = {
-    from: { lat: pointA.lat, lng: pointA.lng },
-    to: { lat: pointB.lat, lng: pointB.lng },
+    from: { lat: A.lat, lng: A.lng },
+    to:   { lat: B.lat, lng: B.lng },
     distance_km: distanceKm
   };
 
-  tg.sendData(JSON.stringify(payload));
-  tg.close();
+  tg?.sendData(JSON.stringify(payload));
+  tg?.close();
 };
-
-/* ================= HAVERSINE ================= */
-function haversine(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) *
-    Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) ** 2;
-
-  return +(2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(2);
-}
 </script>
-
 </body>
 </html>
