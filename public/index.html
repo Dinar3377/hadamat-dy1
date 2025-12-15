@@ -5,7 +5,7 @@
 <title>Заказ такси</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<!-- Telegram -->
+<!-- Telegram WebApp -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
 <!-- Yandex Maps -->
@@ -16,6 +16,7 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
+  font-family: Arial, sans-serif;
 }
 
 #map {
@@ -28,6 +29,7 @@ html, body {
   gap: 10px;
   padding: 10px;
   background: #fff;
+  box-sizing: border-box;
 }
 
 button {
@@ -55,8 +57,8 @@ button {
 
 <div class="controls">
   <button class="locate" id="locateBtn">📍 Моё место</button>
-  <button class="clear" id="clearBtn">❌ Очистить</button>
-  <button class="order" id="orderBtn" disabled>✅ Заказать</button>
+  <button class="clear"  id="clearBtn">❌ Очистить</button>
+  <button class="order"  id="orderBtn" disabled>✅ Заказать</button>
 </div>
 
 <script>
@@ -73,11 +75,10 @@ let route = null;
 
 function init() {
   map = new ymaps.Map("map", {
-    center: [55.751244, 37.618423], // Москва
+    center: [55.751244, 37.618423], // центр по умолчанию
     zoom: 13
   });
 
-  // Клик по карте
   map.events.add('click', function (e) {
     const coords = e.get('coords');
 
@@ -93,13 +94,21 @@ function init() {
 // ---------- ТОЧКИ ----------
 function setPointA(coords) {
   if (pointA) map.geoObjects.remove(pointA);
-  pointA = new ymaps.Placemark(coords, { balloonContent: "Откуда" }, { preset: "islands#greenIcon" });
+  pointA = new ymaps.Placemark(
+    coords,
+    { balloonContent: "Откуда" },
+    { preset: "islands#greenIcon" }
+  );
   map.geoObjects.add(pointA);
 }
 
 function setPointB(coords) {
   if (pointB) map.geoObjects.remove(pointB);
-  pointB = new ymaps.Placemark(coords, { balloonContent: "Куда" }, { preset: "islands#blueIcon" });
+  pointB = new ymaps.Placemark(
+    coords,
+    { balloonContent: "Куда" },
+    { preset: "islands#blueIcon" }
+  );
   map.geoObjects.add(pointB);
 }
 
@@ -107,12 +116,13 @@ function setPointB(coords) {
 function buildRoute() {
   if (route) map.geoObjects.remove(route);
 
-  ymaps.route([
-    pointA.geometry.getCoordinates(),
-    pointB.geometry.getCoordinates()
-  ], {
-    routingMode: "auto"
-  }).then(function (r) {
+  ymaps.route(
+    [
+      pointA.geometry.getCoordinates(),
+      pointB.geometry.getCoordinates()
+    ],
+    { routingMode: "auto" }
+  ).then(function (r) {
     route = r;
     map.geoObjects.add(route);
     document.getElementById("orderBtn").disabled = false;
@@ -125,9 +135,7 @@ function buildRoute() {
 
 // 📍 Моё местоположение
 document.getElementById("locateBtn").onclick = () => {
-  ymaps.geolocation.get({
-    provider: 'auto'
-  }).then(res => {
+  ymaps.geolocation.get({ provider: 'auto' }).then(res => {
     const coords = res.geoObjects.get(0).geometry.getCoordinates();
     map.setCenter(coords, 16);
     setPointA(coords);
@@ -139,20 +147,31 @@ document.getElementById("locateBtn").onclick = () => {
 // ❌ Очистить
 document.getElementById("clearBtn").onclick = () => {
   map.geoObjects.removeAll();
-  pointA = pointB = route = null;
+  pointA = null;
+  pointB = null;
+  route = null;
   document.getElementById("orderBtn").disabled = true;
 };
 
 // ✅ Заказать
 document.getElementById("orderBtn").onclick = () => {
-  const distanceKm = (route.getLength() / 1000).toFixed(2);
+  if (!pointA || !pointB || !route) {
+    alert("❌ Сначала выберите маршрут");
+    return;
+  }
 
-  tg.sendData(JSON.stringify({
+  const distanceKm = route.getLength() / 1000;
+
+  const payload = {
+    type: "client_route",                 // 🔥 КЛЮЧЕВО ДЛЯ БОТА
     from: pointA.geometry.getCoordinates(),
     to: pointB.geometry.getCoordinates(),
-    distance_km: distanceKm
-  }));
+    distance_km: Number(distanceKm.toFixed(2))
+  };
 
+  console.log("📤 SEND TO BOT:", payload);
+
+  tg.sendData(JSON.stringify(payload));
   tg.close();
 };
 </script>
